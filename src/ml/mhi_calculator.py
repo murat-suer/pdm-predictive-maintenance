@@ -72,6 +72,9 @@ class MHICalculator:
     # reliability" on machines whose alarm pipeline (grace + 2-cycle
     # confirmation) was completely quiet.
     RELIABILITY_PENALTY_PER_EVENT = 0.10
+    # Nothing is ever 100% reliable: a quiet history is evidence, not a
+    # guarantee. The metric is capped just like RUL confidence.
+    RELIABILITY_CEILING = 0.99
 
     def __init__(self, ema_alpha: float | None = None):
         self.ema_alpha = ema_alpha if ema_alpha is not None else self.DEFAULT_EMA_ALPHA
@@ -119,7 +122,7 @@ class MHICalculator:
         if confirmed_events is not None:
             # Preferred: ground reliability in the same evidence the alarm
             # system acts on. Each confirmed anomaly event in the window
-            # docks a fixed fraction; a quiet machine reads 100%.
+            # docks a fixed fraction.
             reliability = max(
                 0.0, 1.0 - self.RELIABILITY_PENALTY_PER_EVENT * confirmed_events
             )
@@ -129,6 +132,9 @@ class MHICalculator:
         else:
             # Not enough evidence — neutral in the product, None for display.
             reliability = None
+
+        if reliability is not None:
+            reliability = min(reliability, self.RELIABILITY_CEILING)
 
         condition = max(0.0, 1.0 - degradation_level)
 

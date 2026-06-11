@@ -154,7 +154,8 @@ class TestReliabilityMinSamples:
             recent_anomaly_count=0,
             recent_readings_count=MHICalculator.MIN_RELIABILITY_SAMPLES,
         )
-        assert result["reliability_score"] == 1.0
+        # Capped: a quiet history is evidence, not a guarantee.
+        assert result["reliability_score"] == 0.99
 
 
 class TestEventBasedReliability:
@@ -171,7 +172,8 @@ class TestEventBasedReliability:
             recent_readings_count=30,
             confirmed_events=0,
         )
-        assert result["reliability_score"] == 1.0
+        # Capped: a quiet history is evidence, not a guarantee.
+        assert result["reliability_score"] == 0.99
 
     def test_each_confirmed_event_docks_ten_percent(self):
         calc = MHICalculator()
