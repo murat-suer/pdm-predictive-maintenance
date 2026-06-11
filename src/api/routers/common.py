@@ -71,13 +71,18 @@ def latest_health_scores(db: Session, machine_ids: list[str]) -> dict[str, Simpl
             if last_repair is not None and last_repair[0] is not None
             else None
         )
-        if (
-            snapshot.rul_hours is not None
-            and repaired_at is not None
-            and as_utc(snapshot.calculated_at) < repaired_at
-        ):
+        if repaired_at is not None and as_utc(snapshot.calculated_at) < repaired_at:
+            # The overhaul renewed the machine: every pre-repair estimate -
+            # not just RUL - describes a unit that no longer exists. Serve
+            # honest dashes until the ML re-warms and writes a fresh row,
+            # instead of haunting a rebuilt machine with 0% health.
             snapshot.rul_hours = None
             snapshot.confidence = None
+            snapshot.health_score = None
+            snapshot.availability_score = None
+            snapshot.reliability_score = None
+            snapshot.condition_score = None
+            snapshot.classification = None
         if snapshot.rul_hours is None:
             cutoff = utc_now() - timedelta(minutes=RUL_FRESHNESS_MINUTES)
             if repaired_at is not None:

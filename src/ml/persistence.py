@@ -94,12 +94,29 @@ def update_mhi(machine_id, phase, payload, det_result, rul_result, mhi_calc, buf
     try:
         from datetime import timedelta
 
+        from src.database.models import MaintenanceLog
+
         with get_db_context() as db:
+            # An overhaul renews the unit: events from before the last
+            # repair belong to the previous life and must not depress the
+            # rebuilt machine's reliability.
+            cutoff = datetime.now(UTC) - timedelta(hours=24)
+            last_repair = (
+                db.query(MaintenanceLog.performed_at)
+                .filter(MaintenanceLog.machine_id == machine_id)
+                .order_by(MaintenanceLog.performed_at.desc())
+                .first()
+            )
+            if last_repair is not None and last_repair[0] is not None:
+                repaired_at = last_repair[0]
+                if repaired_at.tzinfo is None:
+                    repaired_at = repaired_at.replace(tzinfo=UTC)
+                cutoff = max(cutoff, repaired_at)
             confirmed_events = (
                 db.query(AnomalyLog)
                 .filter(
                     AnomalyLog.machine_id == machine_id,
-                    AnomalyLog.detected_at >= datetime.now(UTC) - timedelta(hours=24),
+                    AnomalyLog.detected_at >= cutoff,
                 )
                 .count()
             )
