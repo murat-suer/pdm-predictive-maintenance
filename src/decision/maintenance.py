@@ -414,10 +414,23 @@ def _complete_maintenance(db, r, job: dict) -> None:
         synchronize_session=False,
     )
 
-    alarm = None
-    if job.get("alarm_id") is not None:
-        alarm = db.query(AlarmState).filter(AlarmState.id == job["alarm_id"]).first()
-    if alarm is not None:
+    # A completed overhaul invalidates EVERY open alarm on this machine,
+    # not just the one the job was scheduled from. An emergency repair in
+    # particular carries no alarm linkage (it is triggered by a FAILED
+    # sensor reading), and any alarm raised by a parallel detection wave —
+    # e.g. SHELVED by a decision approved while the repair was already in
+    # flight — would otherwise stay open forever on a healthy machine.
+    open_alarms = (
+        db.query(AlarmState)
+        .filter(
+            AlarmState.machine_id == machine_id,
+            AlarmState.status.in_(
+                ("UNACKNOWLEDGED", "ACKNOWLEDGED", "NORMAL_UNACK", "SHELVED", "OUT_OF_SERVICE")
+            ),
+        )
+        .all()
+    )
+    for alarm in open_alarms:
         db.add(
             AlarmStateTransition(
                 alarm_id=alarm.id,

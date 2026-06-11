@@ -320,3 +320,44 @@ class TestObservationCycle:
         anomaly = db.query(AnomalyLog).first()
         assert anomaly.status == "RESOLVED"
         assert anomaly.resolution_type == "OBSERVE_REVIEW"
+
+
+class TestMachineWideAlarmClosure:
+    def test_completion_closes_orphaned_alarms(self, db, redis_client):
+        """An alarm raised by a parallel detection wave (e.g. SHELVED while
+        an emergency repair was already in flight) must not survive the
+        machine's full-health restoration."""
+        from datetime import UTC, datetime
+
+        decision, alarm = seed_pending_decision(db, machine_id="AC-201", recommendation="SHUTDOWN")
+        act_on_due_decisions(db, redis_client)
+        # Orphan: a second alarm with no job linkage, shelved mid-repair.
+        orphan_anomaly = AnomalyLog(
+            machine_id="AC-201",
+            detected_at=datetime.now(UTC),
+            anomaly_score=0.8,
+            severity="WARNING",
+            status="ACTIVE",
+            fault_type="OIL_DEGRADATION",
+        )
+        db.add(orphan_anomaly)
+        db.flush()
+        orphan = AlarmState(
+            anomaly_id=orphan_anomaly.id,
+            machine_id="AC-201",
+            level=2,
+            status="SHELVED",
+            created_at=datetime.now(UTC),
+            last_updated=datetime.now(UTC),
+        )
+        db.add(orphan)
+        db.commit()
+
+        execute_due_jobs(db, redis_client)  # START
+        key = next(iter(redis_client.zsets[SCHEDULE_KEY]))
+        redis_client.zsets[SCHEDULE_KEY][key] = 0.0
+        execute_due_jobs(db, redis_client)  # COMPLETE
+
+        db.refresh(orphan)
+        assert orphan.status == "NORMAL"
+        assert orphan.oos_restored_at is not None
