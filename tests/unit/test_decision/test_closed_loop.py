@@ -8,11 +8,13 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.database.models import (
+    AIActLog,
     AlarmState,
     AlarmStateTransition,
     AnomalyLog,
     DecisionAuditLog,
     DecisionLog,
+    MachineHealthScore,
     MaintenanceLog,
     WorkOrder,
 )
@@ -36,6 +38,8 @@ TABLES = (
     DecisionAuditLog,
     WorkOrder,
     MaintenanceLog,
+    MachineHealthScore,
+    AIActLog,
 )
 
 
@@ -361,3 +365,66 @@ class TestMachineWideAlarmClosure:
         db.refresh(orphan)
         assert orphan.status == "NORMAL"
         assert orphan.oos_restored_at is not None
+
+
+class TestOrphanReconciliation:
+    def test_orphan_anomaly_gets_alarm_and_decision(self, db, redis_client):
+        """A lost stream event must not silence the machine: the sweep
+        re-creates the alarm and decision from the DB row."""
+        from datetime import UTC, datetime, timedelta
+
+        from src.decision.subscriber import DecisionSubscriber
+
+        orphan = AnomalyLog(
+            machine_id="HX-202",
+            detected_at=datetime.now(UTC) - timedelta(minutes=5),
+            anomaly_score=0.52,
+            severity="WARNING",
+            status="ACTIVE",
+            fault_type="FOULING",
+        )
+        db.add(orphan)
+        db.commit()
+
+        class GroupFakeRedis(FakeRedis):
+            def xgroup_create(self, *a, **k):
+                pass
+
+        sub = DecisionSubscriber(
+            redis_client=GroupFakeRedis(), db_session=db, demo_mode=True
+        )
+        healed = sub.reconcile_orphan_anomalies()
+        assert healed == 1
+
+        alarm = db.query(AlarmState).filter(AlarmState.machine_id == "HX-202").first()
+        assert alarm is not None
+        assert alarm.anomaly_id == orphan.id
+        decision = db.query(DecisionLog).filter(DecisionLog.alarm_id == alarm.id).first()
+        assert decision is not None
+        assert decision.ai_recommendation is not None
+
+    def test_recent_anomalies_left_alone(self, db, redis_client):
+        """An anomaly younger than the grace window is the stream's job."""
+        from datetime import UTC, datetime
+
+        from src.decision.subscriber import DecisionSubscriber
+
+        fresh = AnomalyLog(
+            machine_id="HX-202",
+            detected_at=datetime.now(UTC),
+            anomaly_score=0.52,
+            severity="WARNING",
+            status="ACTIVE",
+            fault_type="FOULING",
+        )
+        db.add(fresh)
+        db.commit()
+
+        class GroupFakeRedis(FakeRedis):
+            def xgroup_create(self, *a, **k):
+                pass
+
+        sub = DecisionSubscriber(
+            redis_client=GroupFakeRedis(), db_session=db, demo_mode=True
+        )
+        assert sub.reconcile_orphan_anomalies() == 0

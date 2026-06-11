@@ -390,8 +390,90 @@ class DecisionSubscriber:
             return alarm
 
         except Exception:
+            # NEVER swallow this silently: a dropped event leaves the anomaly
+            # ACTIVE forever, which blocks every future publish for the
+            # machine (write_anomaly_log dedup) — the system goes blind on
+            # that machine until something closes the orphan.
+            logger.exception(
+                f"Alarm creation failed for anomaly {anomaly_id} ({machine_id}); "
+                f"event left for reconciliation"
+            )
             self._db.rollback()
+            # Allow the reconciliation sweep (or a redelivery) to retry.
+            self._processed_anomaly_ids.discard(anomaly_id)
             return None
+
+    # -------------------------------------------------------------------
+    # Orphan reconciliation: self-healing for dropped anomaly events
+    # -------------------------------------------------------------------
+    ORPHAN_MIN_AGE_S = 120
+    ORPHAN_RETRY_COOLDOWN_S = 300
+
+    def reconcile_orphan_anomalies(self) -> int:
+        """Re-process ACTIVE anomalies that never produced an alarm.
+
+        A stream event can be lost (consumer crash between read and commit,
+        a poisoned session, a deploy mid-flight). Because write_anomaly_log
+        dedups on the ACTIVE row, a single lost event silences the machine
+        permanently. This sweep finds such orphans and synthesizes the event
+        from the database row, with a cooldown so a persistent failure logs
+        loudly instead of hot-looping.
+        """
+        from src.database.models import AlarmState, AnomalyLog, MachineHealthScore
+
+        now = datetime.now(UTC)
+        cutoff = now - timedelta(seconds=self.ORPHAN_MIN_AGE_S)
+        orphans = (
+            self._db.query(AnomalyLog)
+            .outerjoin(AlarmState, AlarmState.anomaly_id == AnomalyLog.id)
+            .filter(
+                AnomalyLog.status == "ACTIVE",
+                AnomalyLog.detected_at <= cutoff,
+                AlarmState.id.is_(None),
+            )
+            .all()
+        )
+        if not orphans:
+            return 0
+
+        retries = self.__dict__.setdefault("_orphan_last_retry", {})
+        healed = 0
+        for anomaly in orphans:
+            last = retries.get(anomaly.id)
+            if last is not None and (now - last).total_seconds() < self.ORPHAN_RETRY_COOLDOWN_S:
+                continue
+            retries[anomaly.id] = now
+
+            score = (
+                self._db.query(MachineHealthScore)
+                .filter(
+                    MachineHealthScore.machine_id == anomaly.machine_id,
+                    MachineHealthScore.rul_hours.isnot(None),
+                )
+                .order_by(MachineHealthScore.calculated_at.desc())
+                .first()
+            )
+            detected = anomaly.detected_at
+            if detected.tzinfo is None:
+                detected = detected.replace(tzinfo=UTC)
+            event = {
+                "machine_id": anomaly.machine_id,
+                "anomaly_id": str(anomaly.id),
+                "anomaly_score": str(anomaly.anomaly_score or 0.5),
+                "severity": anomaly.severity or "WARNING",
+                "timestamp": detected.isoformat(),
+                "phase": "DEGRADING",
+                "rul_hours": str(score.rul_hours) if score else "",
+            }
+            self._processed_anomaly_ids.discard(anomaly.id)
+            result = self._process_anomaly_event(event)
+            if result is not None and not getattr(result, "suppressed", False):
+                healed += 1
+                logger.warning(
+                    f"Reconciled orphan anomaly {anomaly.id} ({anomaly.machine_id}): "
+                    f"alarm and decision restored"
+                )
+        return healed
 
     def _severity_to_level(self, severity: str) -> int:
         """Convert severity string to alarm level."""

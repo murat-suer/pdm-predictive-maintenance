@@ -70,6 +70,11 @@ def run() -> None:
                 except Exception as e:
                     logger.error(f"Maintenance tick failed: {e}")
                     db.rollback()
+                try:
+                    subscriber.reconcile_orphan_anomalies()
+                except Exception as e:
+                    logger.error(f"Orphan reconciliation failed: {e}")
+                    db.rollback()
                 last_operator = now
     except KeyboardInterrupt:
         logger.info("Decision service stopped")
