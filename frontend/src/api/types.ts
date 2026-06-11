@@ -197,7 +197,8 @@ export interface SavingsSummary {
   total_avoided_eur: number
   total_savings_eur: number
   maintenance_count: number
-  window_hours: number
+  window_started_at: string | null
+  uptime_seconds: number | null
 }
 
 export interface WhatIfResult {

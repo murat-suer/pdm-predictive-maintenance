@@ -26,6 +26,14 @@ const statusShape: Record<string, string> = {
 
 const machineTypes = ['All', 'Compressor', 'Heat Exchanger', 'Conveyor'] as const
 
+function formatUptime(seconds: number): string {
+  const days = Math.floor(seconds / 86400)
+  const hours = Math.floor((seconds % 86400) / 3600)
+  if (days > 0) return `${days}d ${hours}h`
+  const minutes = Math.floor((seconds % 3600) / 60)
+  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`
+}
+
 export default function FleetOverview() {
   const [filter, setFilter] = useState<'All' | 'Alert' | 'Normal'>('All')
   const [typeFilter, setTypeFilter] = useState<string>('All')
@@ -144,10 +152,7 @@ export default function FleetOverview() {
             >
               {t('fleet.savings')}
               {savingsApi.data && (
-                <span className="normal-case tracking-normal">
-                  {' '}
-                  · {t('fleet.savingsWindow', { hours: savingsApi.data.window_hours })}
-                </span>
+                <span className="normal-case tracking-normal"> · {t('fleet.savingsWindow')}</span>
               )}
             </span>
             <span className="text-success text-2xl font-semibold font-mono">
@@ -160,6 +165,11 @@ export default function FleetOverview() {
                 ? `${savingsApi.data.maintenance_count} ${t('fleet.maintenanceEvents')}`
                 : ''}
             </span>
+            {savingsApi.data?.uptime_seconds != null && (
+              <span className="text-text-tertiary text-[10px]">
+                {t('fleet.uptimeReset', { up: formatUptime(savingsApi.data.uptime_seconds) })}
+              </span>
+            )}
           </div>
         </Card>
       </div>

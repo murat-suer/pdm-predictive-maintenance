@@ -36,7 +36,8 @@ const en = {
   'fleet.critical': 'Critical',
   'fleet.maintenance': 'Maintenance',
   'fleet.savings': 'Savings (PdM)',
-  'fleet.savingsWindow': 'last {hours}h',
+  'fleet.savingsWindow': 'this demo cycle',
+  'fleet.uptimeReset': 'running for {up} · resets every Friday 22:00',
   'fleet.savingsTooltip': 'Avoided run-to-failure cost minus actual maintenance spend',
   'fleet.maintenanceEvents': 'maintenance events',
   'fleet.healthTrend': 'Fleet Health Trend (24h MHI)',
@@ -289,7 +290,7 @@ const en = {
   'system.metric.online': 'Machines online',
   'system.metric.alarms': 'Active alarms',
   'system.metric.pending': 'Pending decisions',
-  'system.metric.savings': 'Savings (24h)',
+  'system.metric.savings': 'Savings (cycle)',
 } as const
 
 export type TranslationKey = keyof typeof en
@@ -317,7 +318,8 @@ const tr: Record<TranslationKey, string> = {
   'fleet.critical': 'Kritik',
   'fleet.maintenance': 'Bakımda',
   'fleet.savings': 'Tasarruf (PdM)',
-  'fleet.savingsWindow': 'son {hours} saat',
+  'fleet.savingsWindow': 'bu demo döngüsü',
+  'fleet.uptimeReset': '{up}’dir çalışıyor · her Cuma 22:00’de sıfırlanır',
   'fleet.savingsTooltip': 'Önlenen arızaya-koşma maliyeti eksi gerçekleşen bakım harcaması',
   'fleet.maintenanceEvents': 'bakım olayı',
   'fleet.healthTrend': 'Filo Sağlık Trendi (24s MHI)',
@@ -563,7 +565,7 @@ const tr: Record<TranslationKey, string> = {
   'system.metric.online': 'Çevrimiçi makine',
   'system.metric.alarms': 'Aktif alarm',
   'system.metric.pending': 'Bekleyen karar',
-  'system.metric.savings': 'Tasarruf (24s)',
+  'system.metric.savings': 'Tasarruf (döngü)',
 }
 
 const de: Record<TranslationKey, string> = {
@@ -589,7 +591,8 @@ const de: Record<TranslationKey, string> = {
   'fleet.critical': 'Kritisch',
   'fleet.maintenance': 'In Wartung',
   'fleet.savings': 'Einsparung (PdM)',
-  'fleet.savingsWindow': 'letzte {hours} Std.',
+  'fleet.savingsWindow': 'dieser Demo-Zyklus',
+  'fleet.uptimeReset': 'läuft seit {up} · Reset jeden Freitag 22:00',
   'fleet.savingsTooltip': 'Vermiedene Run-to-Failure-Kosten abzüglich tatsächlicher Wartungskosten',
   'fleet.maintenanceEvents': 'Wartungsereignisse',
   'fleet.healthTrend': 'Flotten-Gesundheitstrend (24h MHI)',
@@ -835,7 +838,7 @@ const de: Record<TranslationKey, string> = {
   'system.metric.online': 'Maschinen online',
   'system.metric.alarms': 'Aktive Alarme',
   'system.metric.pending': 'Offene Entscheidungen',
-  'system.metric.savings': 'Einsparung (24 Std.)',
+  'system.metric.savings': 'Einsparung (Zyklus)',
 }
 
 const dictionaries: Record<Lang, Record<TranslationKey, string>> = { en, de, tr }

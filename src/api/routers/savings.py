@@ -10,11 +10,12 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import get_db
 from src.api.routers.common import as_utc, utc_now
-from src.database.models import DecisionLog, MaintenanceLog
+from src.database.models import DecisionLog, MachineHealthScore, MaintenanceLog
 
 router = APIRouter(prefix="/savings", tags=["savings"])
 
@@ -41,7 +42,11 @@ class SavingsSummary(BaseModel):
     total_avoided_eur: float
     total_savings_eur: float
     maintenance_count: int
-    window_hours: int
+    # Default window is the whole demo cycle (the weekly reset wipes the
+    # database, so the earliest health row marks the cycle start). A
+    # visitor must be able to tell what period the number covers.
+    window_started_at: str | None
+    uptime_seconds: int | None
 
 
 def _decision_for_alarm(db: Session, alarm_id) -> DecisionLog | None:
@@ -57,11 +62,25 @@ def _decision_for_alarm(db: Session, alarm_id) -> DecisionLog | None:
 
 @router.get("", response_model=SavingsSummary)
 async def savings_summary(
-    hours: int = Query(default=24, ge=1, le=24 * 30),
+    hours: int | None = Query(default=None, ge=1, le=24 * 30),
     db: Session = Depends(get_db),
 ):
-    """Avoided-cost accounting across completed maintenances in a window."""
-    cutoff = utc_now() - timedelta(hours=hours)
+    """Avoided-cost accounting across completed maintenances.
+
+    Without ``hours`` the window is the current demo cycle: everything
+    since the weekly reset recreated the database.
+    """
+    cycle_start = db.query(func.min(MachineHealthScore.calculated_at)).scalar()
+    now = utc_now()
+    if hours is not None:
+        cutoff = now - timedelta(hours=hours)
+    elif cycle_start is not None:
+        cutoff = as_utc(cycle_start)
+    else:
+        cutoff = now - timedelta(hours=24)
+    uptime_seconds = (
+        int((now - as_utc(cycle_start)).total_seconds()) if cycle_start else None
+    )
     logs = (
         db.query(MaintenanceLog)
         .filter(
@@ -116,5 +135,6 @@ async def savings_summary(
         total_avoided_eur=round(total_avoided, 2),
         total_savings_eur=round(total_avoided - total_actual, 2),
         maintenance_count=len(events),
-        window_hours=hours,
+        window_started_at=as_utc(cycle_start).isoformat() if cycle_start else None,
+        uptime_seconds=uptime_seconds,
     )
