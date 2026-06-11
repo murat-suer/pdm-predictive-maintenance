@@ -1,0 +1,164 @@
+# PDM v3 Runtime Failure-Mode Signature Library
+# 12 failure modes across 6 component categories.
+#
+# `rpn` is an OPERATIONAL risk priority used by the diagnostic engine
+# (ranking = confidence x rpn) and the recommendation engine (option count
+# buckets: >200 / 100-200 / <100). Values are stage-escalated by progression
+# (e.g. bearing_stage_1..4: 120 -> 480) and are deliberately NOT design-FMEA
+# Severity x Occurrence x Detection products: in a textbook FMEA, late-stage
+# modes score LOW detection numbers and RPN does not rise monotonically.
+# The machine-type design FMEAs with true S/O/D ratings live in docs/fmea/
+# at a different granularity — see docs/fmea/README.md for the mapping.
+
+failure_modes:
+  # ─── BEARING (4 modes) ───────────────────────────────────────────────
+  - mode_id: bearing_stage_1
+    category: bearing
+    description: Early stage bearing wear - incipient fatigue
+    rpn: 120
+    rules:
+      - sensor: vibration_rms
+        condition: "trend_up"
+      - sensor: bearing_temp
+        condition: "above:75"
+    category_weight: 0.8
+
+  - mode_id: bearing_stage_2
+    category: bearing
+    description: Advanced bearing wear - measurable degradation
+    rpn: 240
+    rules:
+      - sensor: vibration_rms
+        condition: "trend_up"
+      - sensor: bearing_temp
+        condition: "above:90"
+      - sensor: vibration_rms
+        condition: "above:5.0"
+    category_weight: 0.8
+
+  - mode_id: bearing_stage_3
+    category: bearing
+    description: Severe bearing damage - imminent failure risk
+    rpn: 360
+    rules:
+      - sensor: vibration_rms
+        condition: "above:8.0"
+      - sensor: bearing_temp
+        condition: "above:100"
+      - sensor: vibration_rms
+        condition: "trend_up"
+    category_weight: 0.8
+
+  - mode_id: bearing_stage_4
+    category: bearing
+    description: Stage IV bearing - critical failure imminent
+    rpn: 480
+    rules:
+      - sensor: vibration_rms
+        condition: "above:12.0"
+      - sensor: bearing_temp
+        condition: "above:110"
+      - sensor: vibration_rms
+        condition: "trend_up"
+      - sensor: bearing_temp
+        condition: "trend_up"
+    category_weight: 0.9
+
+  # ─── LUBRICATION (2 modes) ───────────────────────────────────────────
+  - mode_id: oil_degradation
+    category: lubrication
+    description: Oil quality degradation - viscosity breakdown
+    rpn: 180
+    rules:
+      - sensor: oil_pressure
+        condition: "trend_down"
+      - sensor: oil_temp
+        condition: "above:80"
+    category_weight: 0.7
+
+  - mode_id: oil_contamination
+    category: lubrication
+    description: Oil contamination - particle ingress
+    rpn: 200
+    rules:
+      - sensor: oil_pressure
+        condition: "below:2.5"
+      - sensor: oil_temp
+        condition: "trend_up"
+      - sensor: oil_pressure
+        condition: "trend_down"
+    category_weight: 0.7
+
+  # ─── MOTOR (2 modes) ────────────────────────────────────────────────
+  - mode_id: motor_overheating
+    category: motor
+    description: Motor overheating - insulation degradation
+    rpn: 300
+    rules:
+      - sensor: motor_temp
+        condition: "above:85"
+      - sensor: motor_current
+        condition: "trend_up"
+    category_weight: 0.75
+
+  - mode_id: motor_imbalance
+    category: motor
+    description: Motor rotor imbalance
+    rpn: 160
+    rules:
+      - sensor: vibration_rms
+        condition: "above:4.0"
+      - sensor: motor_current
+        condition: "delta_pct:10"
+    category_weight: 0.75
+
+  # ─── PUMP (2 modes) ─────────────────────────────────────────────────
+  - mode_id: pump_cavitation
+    category: pump
+    description: Pump cavitation - vapor bubble collapse
+    rpn: 280
+    rules:
+      - sensor: discharge_pressure
+        condition: "trend_down"
+      - sensor: vibration_rms
+        condition: "above:6.0"
+      - sensor: flow_rate
+        condition: "below:80"
+    category_weight: 0.7
+
+  - mode_id: pump_seal_leak
+    category: pump
+    description: Pump seal leakage
+    rpn: 150
+    rules:
+      - sensor: discharge_pressure
+        condition: "below:3.0"
+      - sensor: flow_rate
+        condition: "trend_down"
+    category_weight: 0.7
+
+  # ─── SHAFT (1 mode) ─────────────────────────────────────────────────
+  - mode_id: shaft_misalignment
+    category: shaft
+    description: Shaft misalignment - angular or parallel
+    rpn: 220
+    rules:
+      - sensor: vibration_rms
+        condition: "above:5.5"
+      - sensor: vibration_rms
+        condition: "trend_up"
+      - sensor: bearing_temp
+        condition: "above:80"
+    category_weight: 0.75
+
+  # ─── COUPLING (1 mode) ──────────────────────────────────────────────
+  - mode_id: coupling_wear
+    category: coupling
+    description: Coupling element wear - elastomer degradation
+    rpn: 190
+    rules:
+      - sensor: vibration_rms
+        condition: "above:4.5"
+      - sensor: speed_rpm
+        condition: "delta_pct:3"
+    category_weight: 0.65

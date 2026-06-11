@@ -1,0 +1,96 @@
+name: pdm-intelligence
+
+x-backend: &backend
+  build:
+    context: .
+    dockerfile: docker/Dockerfile.backend
+  environment: &backend-env
+    DATABASE_URL: postgresql://pdm_user:${POSTGRES_PASSWORD:-pdm_dev_password}@db:5432/pdm_intelligence
+    REDIS_URL: redis://redis:6379/0
+    SIMULATION_SPEED: ${SIMULATION_SPEED:-10}
+    AUTO_APPROVE_DELAY_SECONDS: ${AUTO_APPROVE_DELAY_SECONDS:-180}
+    CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-*}
+    LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    db-init:
+      condition: service_completed_successfully
+  restart: unless-stopped
+
+services:
+  db:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_USER: pdm_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pdm_dev_password}
+      POSTGRES_DB: pdm_intelligence
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pdm_user -d pdm_intelligence"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  db-init:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    environment: *backend-env
+    command: ["python", "scripts/init_db.py"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  generator:
+    <<: *backend
+    command: ["python", "-m", "src.data_generator.runner"]
+
+  ml:
+    <<: *backend
+    command: ["python", "-m", "src.ml.subscriber"]
+    volumes:
+      - model_store:/app/model_store
+
+  decision:
+    <<: *backend
+    command: ["python", "-m", "src.decision.runner"]
+    environment:
+      <<: *backend-env
+      DECISION_DEMO_MODE: ${DECISION_DEMO_MODE:-true}
+
+  api:
+    <<: *backend
+    command: ["uvicorn", "src.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+    volumes:
+      - model_store:/app/model_store
+    expose:
+      - "8000"
+
+  frontend:
+    build:
+      context: frontend
+    depends_on:
+      - api
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  model_store:

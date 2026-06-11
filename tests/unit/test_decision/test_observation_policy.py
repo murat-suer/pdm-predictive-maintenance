@@ -1,0 +1,166 @@
+"""Tests for the repeated-OBSERVE escalation policy (EEMUA 191 guard)."""
+from datetime import UTC, datetime, timedelta
+
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from src.database.models import AnomalyLog, DecisionLog
+from src.decision.observation_policy import (
+    DISPATCH_COST_EUR,
+    DISPATCH_SCENARIO,
+    apply_observe_escalation,
+    fault_is_identified,
+    observe_streak,
+)
+
+
+def make_scenarios(recommended="OBSERVE"):
+    scenarios = [
+        {"scenario": "OBSERVE", "cost": 0.0, "expected_cost": 850.0,
+         "failure_probability": 0.02, "is_recommended": False},
+        {"scenario": "PLANNED", "cost": 3370.0, "expected_cost": 3010.0,
+         "failure_probability": 0.001, "is_recommended": False},
+        {"scenario": "REDUCE_LOAD", "cost": 144.0, "expected_cost": 6918.0,
+         "failure_probability": 0.01, "is_recommended": False},
+        {"scenario": "SHUTDOWN", "cost": 8229.0, "expected_cost": 8229.0,
+         "failure_probability": 0.0, "is_recommended": False},
+    ]
+    for s in scenarios:
+        s["is_recommended"] = s["scenario"] == recommended
+    return scenarios
+
+
+class TestApplyObserveEscalation:
+    def test_streak_zero_changes_nothing(self):
+        scenarios, rec = apply_observe_escalation(make_scenarios(), "OBSERVE", 0, False)
+        assert rec == "OBSERVE"
+        assert [s["scenario"] for s in scenarios] == [
+            "OBSERVE", "PLANNED", "REDUCE_LOAD", "SHUTDOWN"
+        ]
+
+    def test_second_decision_unidentified_recommends_dispatch(self):
+        scenarios, rec = apply_observe_escalation(make_scenarios(), "OBSERVE", 1, False)
+        ids = [s["scenario"] for s in scenarios]
+        assert DISPATCH_SCENARIO in ids
+        assert rec == DISPATCH_SCENARIO
+        recommended = [s for s in scenarios if s["is_recommended"]]
+        assert len(recommended) == 1
+        assert recommended[0]["scenario"] == DISPATCH_SCENARIO
+        assert recommended[0]["cost"] == DISPATCH_COST_EUR
+
+    def test_identified_fault_keeps_observe_recommendation(self):
+        scenarios, rec = apply_observe_escalation(make_scenarios(), "OBSERVE", 1, True)
+        # dispatch is offered but the cost-optimal recommendation stands
+        assert DISPATCH_SCENARIO in [s["scenario"] for s in scenarios]
+        assert rec == "OBSERVE"
+
+    def test_planned_recommendation_is_not_overridden(self):
+        scenarios, rec = apply_observe_escalation(
+            make_scenarios(recommended="PLANNED"), "PLANNED", 2, False
+        )
+        assert rec == "PLANNED"
+
+    def test_fourth_decision_drops_observe(self):
+        scenarios, rec = apply_observe_escalation(make_scenarios(), "OBSERVE", 3, False)
+        ids = [s["scenario"] for s in scenarios]
+        assert "OBSERVE" not in ids
+        assert DISPATCH_SCENARIO in ids
+        assert rec == DISPATCH_SCENARIO
+
+    def test_observe_dropped_identified_falls_back_to_expected_cost(self):
+        scenarios, rec = apply_observe_escalation(make_scenarios(), "OBSERVE", 3, True)
+        assert "OBSERVE" not in [s["scenario"] for s in scenarios]
+        # identified fault: no forced dispatch — cheapest remaining expected cost
+        assert rec == DISPATCH_SCENARIO or rec == "PLANNED"
+        # dispatch expected cost = 150 + observe risk term (850) = 1000 < 3010
+        assert rec == DISPATCH_SCENARIO
+
+    def test_exactly_one_recommended_flag(self):
+        for streak in (0, 1, 2, 3, 5):
+            scenarios, _ = apply_observe_escalation(make_scenarios(), "OBSERVE", streak, False)
+            assert sum(1 for s in scenarios if s["is_recommended"]) == 1
+
+
+@pytest.fixture
+def db():
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    DecisionLog.__table__.create(engine, checkfirst=True)
+    AnomalyLog.__table__.create(engine, checkfirst=True)
+    session = sessionmaker(bind=engine)()
+    yield session
+    session.close()
+    engine.dispose()
+
+
+def add_decision(db, machine_id, chosen, minutes_ago):
+    db.add(
+        DecisionLog(
+            machine_id=machine_id,
+            action="APPROVE",
+            chosen_scenario_id=chosen,
+            decided_at=datetime.now(UTC) - timedelta(minutes=minutes_ago),
+            created_at=datetime.now(UTC) - timedelta(minutes=minutes_ago + 1),
+        )
+    )
+    db.commit()
+
+
+class TestObserveStreak:
+    def test_counts_consecutive_observes(self, db):
+        add_decision(db, "AC-201", "OBSERVE", 30)
+        add_decision(db, "AC-201", "OBSERVE", 20)
+        assert observe_streak(db, "AC-201") == 2
+
+    def test_intervention_resets_streak(self, db):
+        add_decision(db, "AC-201", "OBSERVE", 40)
+        add_decision(db, "AC-201", "PLANNED", 30)
+        add_decision(db, "AC-201", "OBSERVE", 20)
+        assert observe_streak(db, "AC-201") == 1
+
+    def test_dispatch_does_not_reset_streak(self, db):
+        add_decision(db, "AC-201", "OBSERVE", 40)
+        add_decision(db, "AC-201", DISPATCH_SCENARIO, 30)
+        add_decision(db, "AC-201", "OBSERVE", 20)
+        assert observe_streak(db, "AC-201") == 2
+
+    def test_other_machine_does_not_count(self, db):
+        add_decision(db, "HX-202", "OBSERVE", 30)
+        assert observe_streak(db, "AC-201") == 0
+
+
+class TestFaultIdentified:
+    def test_unclassified_is_not_identified(self, db):
+        anomaly = AnomalyLog(
+            machine_id="AC-201",
+            detected_at=datetime.now(UTC),
+            anomaly_score=0.8,
+            severity="WARNING",
+            status="ACTIVE",
+            fault_type="UNCLASSIFIED_ANOMALY",
+        )
+        db.add(anomaly)
+        db.commit()
+        assert fault_is_identified(db, anomaly.id) is False
+
+    def test_named_fault_is_identified(self, db):
+        anomaly = AnomalyLog(
+            machine_id="AC-201",
+            detected_at=datetime.now(UTC),
+            anomaly_score=0.8,
+            severity="WARNING",
+            status="ACTIVE",
+            fault_type="BEARING_FAULT",
+        )
+        db.add(anomaly)
+        db.commit()
+        assert fault_is_identified(db, anomaly.id) is True
+
+    def test_missing_anomaly_is_not_identified(self, db):
+        assert fault_is_identified(db, None) is False
+        assert fault_is_identified(db, 99999) is False

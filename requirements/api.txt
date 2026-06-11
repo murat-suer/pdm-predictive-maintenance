@@ -1,0 +1,4 @@
+fastapi>=0.115.0,<0.134
+uvicorn[standard]>=0.30.0
+websockets>=12.0
+pyyaml>=6.0

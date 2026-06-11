@@ -1,0 +1,333 @@
+# Master Alarm Database per EEMUA 191 / ISA 18.2
+# Covers ALL 30 sensors (6 machines x 5 sensors).
+# Priority levels (per EEMUA 191):
+#   1 - Emergency: immediate action required
+#   2 - High: action required within 10 minutes
+#   3 - Medium: action required within 60 minutes
+#   4 - Low: action required within 8 hours
+
+metadata:
+  standard: "EEMUA 191 / ISA 18.2"
+  version: "1.0.0"
+  total_alarms: 30
+  machines: 6
+  sensors_per_machine: 5
+
+alarms:
+  # ═══════════════════════════════════════════════════════════════════════
+  # AC-201 — Rotary Air Compressor, Line A
+  # ═══════════════════════════════════════════════════════════════════════
+  - machine_id: AC-201
+    sensor_name: vibration_rms
+    priority: 2
+    class: WARNING
+    setpoint: 4.5
+    unit: mm/s
+    operator_action: "Schedule bearing inspection within 48h. Verify lubrication."
+    consequence_of_inaction: "Bearing catastrophic failure, rotor damage, unplanned shutdown."
+    rationale: "ISO 10816 Zone B/C boundary. API 619 vibration limits for rotary compressors."
+
+  - machine_id: AC-201
+    sensor_name: bearing_temp
+    priority: 2
+    class: WARNING
+    setpoint: 85.0
+    unit: degC
+    operator_action: "Check oil cooling system. Reduce load if possible."
+    consequence_of_inaction: "Bearing seizure, shaft damage, potential fire hazard."
+    rationale: "API 619 Section 4.9 bearing metal temperature limit. Babbitt metal softening point."
+
+  - machine_id: AC-201
+    sensor_name: oil_pressure
+    priority: 1
+    class: CRITICAL
+    setpoint: 2.0
+    unit: bar
+    operator_action: "Emergency shutdown. Verify oil pump and supply lines."
+    consequence_of_inaction: "Complete bearing destruction within minutes, shaft seizure."
+    rationale: "Minimum oil film pressure for hydrodynamic bearings. API 614 lube oil system."
+
+  - machine_id: AC-201
+    sensor_name: motor_current
+    priority: 3
+    class: WARNING
+    setpoint: 28.0
+    unit: A
+    operator_action: "Investigate mechanical binding. Check compressor loading."
+    consequence_of_inaction: "Motor winding insulation failure, motor burnout."
+    rationale: "NEMA MG-1 motor service factor limit. 115% of nominal 21A FLC."
+
+  - machine_id: AC-201
+    sensor_name: outlet_pressure
+    priority: 2
+    class: WARNING
+    setpoint: 6.5
+    unit: bar
+    operator_action: "Check inlet valve, discharge valve, and unloader system."
+    consequence_of_inaction: "Downstream process starvation, heat exchanger flow reduction."
+    rationale: "API 619 performance envelope. Minimum pressure for downstream HX-202."
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # HX-202 — Shell & Tube Heat Exchanger, Line A
+  # ═══════════════════════════════════════════════════════════════════════
+  - machine_id: HX-202
+    sensor_name: inlet_temp
+    priority: 3
+    class: WARNING
+    setpoint: 160.0
+    unit: degC
+    operator_action: "Check upstream compressor AC-201 outlet conditions."
+    consequence_of_inaction: "Thermal stress on tube sheet, gasket degradation."
+    rationale: "TEMA operating temperature envelope. Gasket material temperature limit."
+
+  - machine_id: HX-202
+    sensor_name: outlet_temp
+    priority: 2
+    class: WARNING
+    setpoint: 95.0
+    unit: degC
+    operator_action: "Investigate fouling. Check cooling water flow and temperature."
+    consequence_of_inaction: "Process fluid overheating, downstream equipment damage."
+    rationale: "TEMA thermal performance criteria. Process fluid degradation temperature."
+
+  - machine_id: HX-202
+    sensor_name: pressure_drop
+    priority: 2
+    class: WARNING
+    setpoint: 1.4
+    unit: bar
+    operator_action: "Schedule chemical cleaning. Monitor fouling trend."
+    consequence_of_inaction: "Flow restriction, reduced heat transfer, tube erosion."
+    rationale: "TEMA RGP-T-2.4 fouling resistance limit. 65% above clean design dP."
+
+  - machine_id: HX-202
+    sensor_name: flow_rate
+    priority: 2
+    class: WARNING
+    setpoint: 9.0
+    unit: m3/h
+    operator_action: "Check for blockages, valve position, and pump performance."
+    consequence_of_inaction: "Insufficient cooling, process temperature excursion."
+    rationale: "TEMA minimum flow velocity for erosion-corrosion prevention."
+
+  - machine_id: HX-202
+    sensor_name: fouling_index
+    priority: 3
+    class: WARNING
+    setpoint: 0.35
+    unit: "-"
+    operator_action: "Plan chemical cleaning at next opportunity."
+    consequence_of_inaction: "Progressive heat transfer degradation, energy waste."
+    rationale: "TEMA RGP-T-2.4 typical fouling resistance for cooling water service."
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # CM-203 — Conveyor Belt Drive, Line A
+  # ═══════════════════════════════════════════════════════════════════════
+  - machine_id: CM-203
+    sensor_name: belt_tension
+    priority: 2
+    class: WARNING
+    setpoint: 11.5
+    unit: kN
+    operator_action: "Re-tension belt. Inspect splice and take-up system."
+    consequence_of_inaction: "Belt slip, material spillage, drive pulley damage."
+    rationale: "CEMA 7th Ed. Section 6.4 belt tension calculation. Slip threshold."
+
+  - machine_id: CM-203
+    sensor_name: drive_temp
+    priority: 2
+    class: WARNING
+    setpoint: 78.0
+    unit: degC
+    operator_action: "Check gearbox oil level and cooling. Reduce load."
+    consequence_of_inaction: "Gearbox bearing failure, gear tooth damage."
+    rationale: "CEMA drive component temperature limits. Gearbox oil degradation threshold."
+
+  - machine_id: CM-203
+    sensor_name: motor_load
+    priority: 3
+    class: WARNING
+    setpoint: 88.0
+    unit: "%"
+    operator_action: "Investigate mechanical binding or excessive material load."
+    consequence_of_inaction: "Motor thermal overload trip, production stoppage."
+    rationale: "NEMA MG-1 motor service factor. 115% of rated load."
+
+  - machine_id: CM-203
+    sensor_name: speed_rpm
+    priority: 3
+    class: WARNING
+    setpoint: 1380.0
+    unit: RPM
+    operator_action: "Check VFD settings, belt slip, and motor performance."
+    consequence_of_inaction: "Reduced throughput, belt slip damage."
+    rationale: "CEMA design belt speed. 5% below nominal 1450 RPM indicates slip."
+
+  - machine_id: CM-203
+    sensor_name: vibration_rms
+    priority: 2
+    class: WARNING
+    setpoint: 3.5
+    unit: mm/s
+    operator_action: "Inspect drive bearings, gearbox, and coupling alignment."
+    consequence_of_inaction: "Bearing catastrophic failure, gearbox destruction."
+    rationale: "ISO 10816 Zone B/C boundary for conveyor drives."
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # AC-301 — Rotary Air Compressor, Line B
+  # ═══════════════════════════════════════════════════════════════════════
+  - machine_id: AC-301
+    sensor_name: vibration_rms
+    priority: 2
+    class: WARNING
+    setpoint: 4.5
+    unit: mm/s
+    operator_action: "Schedule bearing inspection within 48h. Verify lubrication."
+    consequence_of_inaction: "Bearing catastrophic failure, rotor damage, unplanned shutdown."
+    rationale: "ISO 10816 Zone B/C boundary. API 619 vibration limits for rotary compressors."
+
+  - machine_id: AC-301
+    sensor_name: bearing_temp
+    priority: 2
+    class: WARNING
+    setpoint: 85.0
+    unit: degC
+    operator_action: "Check oil cooling system. Reduce load if possible."
+    consequence_of_inaction: "Bearing seizure, shaft damage, potential fire hazard."
+    rationale: "API 619 Section 4.9 bearing metal temperature limit."
+
+  - machine_id: AC-301
+    sensor_name: oil_pressure
+    priority: 1
+    class: CRITICAL
+    setpoint: 2.0
+    unit: bar
+    operator_action: "Emergency shutdown. Verify oil pump and supply lines."
+    consequence_of_inaction: "Complete bearing destruction within minutes, shaft seizure."
+    rationale: "Minimum oil film pressure for hydrodynamic bearings. API 614."
+
+  - machine_id: AC-301
+    sensor_name: motor_current
+    priority: 3
+    class: WARNING
+    setpoint: 28.0
+    unit: A
+    operator_action: "Investigate mechanical binding. Check compressor loading."
+    consequence_of_inaction: "Motor winding insulation failure, motor burnout."
+    rationale: "NEMA MG-1 motor service factor limit. 115% of nominal FLC."
+
+  - machine_id: AC-301
+    sensor_name: outlet_pressure
+    priority: 2
+    class: WARNING
+    setpoint: 6.5
+    unit: bar
+    operator_action: "Check inlet valve, discharge valve, and unloader system."
+    consequence_of_inaction: "Downstream process starvation, HX-302 flow reduction."
+    rationale: "API 619 performance envelope. Minimum pressure for downstream HX-302."
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # HX-302 — Shell & Tube Heat Exchanger, Line B
+  # ═══════════════════════════════════════════════════════════════════════
+  - machine_id: HX-302
+    sensor_name: inlet_temp
+    priority: 3
+    class: WARNING
+    setpoint: 160.0
+    unit: degC
+    operator_action: "Check upstream compressor AC-301 outlet conditions."
+    consequence_of_inaction: "Thermal stress on tube sheet, gasket degradation."
+    rationale: "TEMA operating temperature envelope. Gasket material temperature limit."
+
+  - machine_id: HX-302
+    sensor_name: outlet_temp
+    priority: 2
+    class: WARNING
+    setpoint: 95.0
+    unit: degC
+    operator_action: "Investigate fouling. Check cooling water flow and temperature."
+    consequence_of_inaction: "Process fluid overheating, downstream equipment damage."
+    rationale: "TEMA thermal performance criteria. Process fluid degradation temperature."
+
+  - machine_id: HX-302
+    sensor_name: pressure_drop
+    priority: 2
+    class: WARNING
+    setpoint: 1.4
+    unit: bar
+    operator_action: "Schedule chemical cleaning. Monitor fouling trend."
+    consequence_of_inaction: "Flow restriction, reduced heat transfer, tube erosion."
+    rationale: "TEMA RGP-T-2.4 fouling resistance limit. 65% above clean design dP."
+
+  - machine_id: HX-302
+    sensor_name: flow_rate
+    priority: 2
+    class: WARNING
+    setpoint: 9.0
+    unit: m3/h
+    operator_action: "Check for blockages, valve position, and pump performance."
+    consequence_of_inaction: "Insufficient cooling, process temperature excursion."
+    rationale: "TEMA minimum flow velocity for erosion-corrosion prevention."
+
+  - machine_id: HX-302
+    sensor_name: fouling_index
+    priority: 3
+    class: WARNING
+    setpoint: 0.35
+    unit: "-"
+    operator_action: "Plan chemical cleaning at next opportunity."
+    consequence_of_inaction: "Progressive heat transfer degradation, energy waste."
+    rationale: "TEMA RGP-T-2.4 typical fouling resistance for cooling water service."
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # CM-303 — Conveyor Belt Drive, Line B
+  # ═══════════════════════════════════════════════════════════════════════
+  - machine_id: CM-303
+    sensor_name: belt_tension
+    priority: 2
+    class: WARNING
+    setpoint: 11.5
+    unit: kN
+    operator_action: "Re-tension belt. Inspect splice and take-up system."
+    consequence_of_inaction: "Belt slip, material spillage, drive pulley damage."
+    rationale: "CEMA 7th Ed. Section 6.4 belt tension calculation. Slip threshold."
+
+  - machine_id: CM-303
+    sensor_name: drive_temp
+    priority: 2
+    class: WARNING
+    setpoint: 78.0
+    unit: degC
+    operator_action: "Check gearbox oil level and cooling. Reduce load."
+    consequence_of_inaction: "Gearbox bearing failure, gear tooth damage."
+    rationale: "CEMA drive component temperature limits. Gearbox oil degradation threshold."
+
+  - machine_id: CM-303
+    sensor_name: motor_load
+    priority: 3
+    class: WARNING
+    setpoint: 88.0
+    unit: "%"
+    operator_action: "Investigate mechanical binding or excessive material load."
+    consequence_of_inaction: "Motor thermal overload trip, production stoppage."
+    rationale: "NEMA MG-1 motor service factor. 115% of rated load."
+
+  - machine_id: CM-303
+    sensor_name: speed_rpm
+    priority: 3
+    class: WARNING
+    setpoint: 1380.0
+    unit: RPM
+    operator_action: "Check VFD settings, belt slip, and motor performance."
+    consequence_of_inaction: "Reduced throughput, belt slip damage."
+    rationale: "CEMA design belt speed. 5% below nominal 1450 RPM indicates slip."
+
+  - machine_id: CM-303
+    sensor_name: vibration_rms
+    priority: 2
+    class: WARNING
+    setpoint: 3.5
+    unit: mm/s
+    operator_action: "Inspect drive bearings, gearbox, and coupling alignment."
+    consequence_of_inaction: "Bearing catastrophic failure, gearbox destruction."
+    rationale: "ISO 10816 Zone B/C boundary for conveyor drives."

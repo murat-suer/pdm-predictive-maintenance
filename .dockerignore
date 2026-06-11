@@ -1,0 +1,15 @@
+.venv/
+.git/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+__pycache__/
+*.pyc
+frontend/node_modules/
+frontend/dist/
+tests/
+docs/
+model_store/
+pdm_intelligence.egg-info/
+.env
+*.log

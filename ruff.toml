@@ -1,0 +1,29 @@
+target-version = "py311"
+line-length = 120
+
+[lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4"]
+ignore = [
+    "E501",
+    # Scientific naming: Weibull beta/eta, L10, BPFO, T_ref etc. are domain notation.
+    "N803",
+    "N806",
+    # SQLAlchemy filter expressions require `== True` / `== None`.
+    "E711",
+    "E712",
+    # FastAPI dependency injection uses function calls in defaults (Depends, Query).
+    "B008",
+    # str-Enum classes are serialized as plain strings in Redis/JSON payloads.
+    "UP042",
+]
+
+[lint.per-file-ignores]
+# Tests intentionally keep illustrative unused values and loose assertions.
+"tests/**" = ["F841", "B007", "B905", "B004", "B017", "E731", "W293"]
+# init_db.py: project guard test forbids f-strings near SQL (see
+# tests/unit/test_database/test_timescaledb.py) — keep .format()/percent style.
+"scripts/init_db.py" = ["UP032", "UP031"]
+# Service entrypoints configure logging before importing the heavy modules.
+"src/ml/subscriber.py" = ["E402"]
+"src/data_generator/runner.py" = ["E402"]
+"src/decision/runner.py" = ["E402"]

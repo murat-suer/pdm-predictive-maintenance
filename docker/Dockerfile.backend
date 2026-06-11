@@ -1,0 +1,25 @@
+# Shared backend image for the api, ml, decision, generator and db-init services.
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+COPY requirements/ requirements/
+# CPU-only torch keeps the image several GB smaller than the CUDA default.
+RUN pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+    -r requirements/base.txt \
+    -r requirements/ml.txt \
+    -r requirements/api.txt
+
+COPY pyproject.toml alembic.ini ./
+COPY alembic/ alembic/
+COPY scripts/ scripts/
+COPY src/ src/
+
+RUN mkdir -p model_store
+
+# Default service; compose overrides the command per service.
+CMD ["uvicorn", "src.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
