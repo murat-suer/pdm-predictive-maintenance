@@ -198,7 +198,8 @@ class TestPredictFailed:
         assert result["rul_hours"] == 0.0
         assert result["rul_low_ci"] == 0.0
         assert result["rul_high_ci"] == 0.0
-        assert result["confidence"] == 1.0
+        # Certainty is never claimed — confidence is capped at 0.99.
+        assert result["confidence"] == 0.99
         assert result["failure_prob_24h"] == 100.0
         assert result["survive_shift_pct"] == 0.0
         assert result["method"] == "failed_state"

@@ -93,6 +93,8 @@ export interface DecisionScenario {
   expected_cost?: number
   failure_probability?: number
   is_recommended: boolean
+  load_reduction_percent?: number | null
+  survival_to_repair?: number | null
 }
 
 export interface PendingDecision {

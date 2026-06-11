@@ -293,6 +293,14 @@ export default function DecisionScreen() {
                 </div>
 
                 <p className="text-[11px] text-text-secondary leading-tight">{t(descriptionKey)}</p>
+                {opt.scenario === 'REDUCE_LOAD' && opt.load_reduction_percent != null && (
+                  <p className="text-[11px] text-alarm-p0 leading-tight font-medium">
+                    {t('decision.loadBridge', {
+                      pct: opt.load_reduction_percent,
+                      p: Math.min(99, Math.round((opt.survival_to_repair ?? 0) * 100)),
+                    })}
+                  </p>
+                )}
 
                 <div className="grid grid-cols-2 gap-2 mt-1">
                   <div className="flex flex-col">

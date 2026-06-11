@@ -401,16 +401,25 @@ class TestShutdownScenario:
         )
         assert result.cost > 0.0
 
-    def test_shutdown_excluded_when_survival_below_threshold(self, engine, ac_profile):
-        """KRİTİK: SHUTDOWN excluded when P(survive) < 0.40."""
-        # Very low RUL → low survival probability
+    def test_shutdown_stays_valid_at_critical_rul(self, engine, ac_profile):
+        """SHUTDOWN must remain on the table even when survival is thin:
+        excluding it left OBSERVE (full run-to-failure expectation) as the
+        cheapest option at RUL→0 — advising to watch the machine die."""
         result = engine.evaluate(
             scenario=DecisionScenario.SHUTDOWN,
             machine_profile=ac_profile,
-            rul_hours=0.5,  # 30 minutes - likely won't survive
+            rul_hours=0.5,  # 30 minutes — survival margin critical
         )
-        assert result.is_valid is False
+        assert result.is_valid is True
         assert result.survival_probability < SHUTDOWN_SURVIVAL_THRESHOLD
+        assert "IMMEDIATELY" in result.prescriptive_action.description
+
+    def test_shutdown_recommended_at_critical_rul(self, engine, ac_profile):
+        """At RUL→0 the controlled stop must beat watching: its expected
+        cost (direct) is below OBSERVE's certain run-to-failure cost."""
+        options = engine.recommend(machine_profile=ac_profile, rul_hours=0.5)
+        recommended = next(o for o in options if o.is_recommended)
+        assert recommended.scenario == DecisionScenario.SHUTDOWN
 
     def test_shutdown_included_when_survival_above_threshold(self, engine, ac_profile):
         """SHUTDOWN valid when P(survive) >= 0.40."""

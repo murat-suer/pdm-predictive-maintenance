@@ -118,11 +118,13 @@ class RULPredictor:
             return result
         if phase == "FAILED":
             self._last_smoothed_rul = 0.0
+            # Confidence is capped below 1.0 everywhere: no model is ever
+            # entitled to claim certainty about remaining life.
             return {
                 "rul_hours": 0.0,
                 "rul_low_ci": 0.0,
                 "rul_high_ci": 0.0,
-                "confidence": 1.0,
+                "confidence": 0.99,
                 "failure_prob_24h": 100.0,
                 "survive_shift_pct": 0.0,
                 "method": "failed_state",
@@ -171,7 +173,7 @@ class RULPredictor:
             "rul_hours": round(max(0.0, rul_smoothed), 2),
             "rul_low_ci": round(ci["p10"], 2),
             "rul_high_ci": round(ci["p90"], 2),
-            "confidence": round(ci["confidence"], 3),
+            "confidence": round(min(ci["confidence"], 0.99), 3),
             "failure_prob_24h": round(failure_prob_24h, 2),
             "survive_shift_pct": round(survive_shift_pct, 2),
             "method": "xgboost+ema",

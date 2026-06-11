@@ -142,7 +142,11 @@ function WhatIfCard({ machineId }: { machineId: string }) {
                     : 'text-text-primary'
               }`}
             >
-              {(result.failure_probability * 100).toFixed(1)}%
+              {result.failure_probability >= 0.99
+                ? '≥99%'
+                : result.failure_probability <= 0.001
+                  ? '<0.1%'
+                  : `${(result.failure_probability * 100).toFixed(1)}%`}
             </span>
           </div>
           <div className="flex flex-col">

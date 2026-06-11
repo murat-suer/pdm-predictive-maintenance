@@ -119,6 +119,11 @@ class RecommendedOption:
     is_valid: bool = True
     expected_cost: float = 0.0
     failure_probability: float = 0.0
+    # REDUCE_LOAD only: the minimal reduction that bridges the machine
+    # safely to the planned repair slot, and the survival probability it
+    # buys — the operator sees "how much do I slow down, and what for".
+    load_reduction_percent: float | None = None
+    survival_to_repair: float | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -494,27 +499,19 @@ class DecisionEngine:
     ) -> DecisionResult:
         """
         SHUTDOWN: Safe emergency stop.
-        Excluded when P(survive) < 0.40.
+
+        Always offered: excluding it below a survival threshold produced a
+        perverse recommendation at RUL→0 — with SHUTDOWN gone, OBSERVE (the
+        full run-to-failure expectation) became the cheapest remaining
+        option and the engine effectively advised watching the machine die.
+        A controlled stop attempt dominates run-to-failure even when the
+        survival margin is thin; the margin is annotated instead.
         """
         # Calculate survival probability
         survival_prob = self.survival_model.survival_probability(
             rul_hours, machine_profile.weibull_eta
         )
-
-        # Check if below threshold
-        if survival_prob < SHUTDOWN_SURVIVAL_THRESHOLD:
-            return DecisionResult(
-                scenario=DecisionScenario.SHUTDOWN,
-                cost=0.0,
-                is_valid=False,
-                rejection_reason=(
-                    f"P(survive)={survival_prob:.3f} < "
-                    f"{SHUTDOWN_SURVIVAL_THRESHOLD} - machine won't survive "
-                    "long enough for safe shutdown"
-                ),
-                survival_probability=survival_prob,
-                prescriptive_action=None,
-            )
+        urgent = survival_prob < SHUTDOWN_SURVIVAL_THRESHOLD
 
         # Calculate costs
         production_loss = (
@@ -543,7 +540,11 @@ class DecisionEngine:
             cost_rate=total_cost / max(self.shutdown_hours, 1.0),
             prescriptive_action=PrescriptiveAction(
                 action_type="EMERGENCY_STOP",
-                description="Execute emergency shutdown",
+                description=(
+                    "Execute emergency shutdown IMMEDIATELY — survival margin critical"
+                    if urgent
+                    else "Execute emergency shutdown"
+                ),
                 parameters={"shutdown_hours": self.shutdown_hours},
             ),
         )
@@ -572,12 +573,19 @@ class DecisionEngine:
 
         options = []
         for scenario in scenarios:
-            result = self.evaluate(
-                scenario=scenario,
-                machine_profile=machine_profile,
-                rul_hours=rul_hours,
-                load_reduction_percent=load_reduction_percent,
-            )
+            chosen_pct = None
+            survival_to_repair = None
+            if scenario == DecisionScenario.REDUCE_LOAD:
+                result, chosen_pct, survival_to_repair = self._best_load_reduction(
+                    machine_profile, rul_hours
+                )
+            else:
+                result = self.evaluate(
+                    scenario=scenario,
+                    machine_profile=machine_profile,
+                    rul_hours=rul_hours,
+                    load_reduction_percent=load_reduction_percent,
+                )
             if result.is_valid:
                 options.append(RecommendedOption(
                     scenario=scenario,
@@ -586,6 +594,8 @@ class DecisionEngine:
                     is_valid=True,
                     expected_cost=result.expected_cost,
                     failure_probability=result.failure_probability,
+                    load_reduction_percent=chosen_pct,
+                    survival_to_repair=survival_to_repair,
                 ))
 
         # Sort by risk-adjusted expected cost (ascending)
@@ -596,3 +606,44 @@ class DecisionEngine:
             options[0].is_recommended = True
 
         return options
+
+    # Candidate load reductions, mildest first; the bridge the machine must
+    # survive is the planned-repair lead plus the repair itself.
+    LOAD_REDUCTION_CANDIDATES = (20.0, 40.0, 60.0)
+    BRIDGE_FAILURE_TOLERANCE = 0.05
+
+    def _best_load_reduction(
+        self,
+        machine_profile: MachineProfile,
+        rul_hours: float,
+    ) -> tuple[DecisionResult, float | None, float | None]:
+        """Pick the MINIMAL load reduction that safely bridges to repair.
+
+        The operator's question is "how little can I slow production and
+        still make it to the planned slot?" — so candidates are tried
+        mildest-first and the first one whose failure probability over the
+        bridge window stays within tolerance wins. If even the deepest
+        reduction cannot bridge, it is still returned (best effort), with
+        its honest survival number.
+        """
+        bridge_hours = PLANNED_LEAD_HOURS + DEFAULT_PLANNED_DOWNTIME_HOURS
+
+        best: tuple[DecisionResult, float, float] | None = None
+        for pct in self.LOAD_REDUCTION_CANDIDATES:
+            result = self.evaluate(
+                scenario=DecisionScenario.REDUCE_LOAD,
+                machine_profile=machine_profile,
+                rul_hours=rul_hours,
+                load_reduction_percent=pct,
+            )
+            if not result.is_valid:
+                return result, None, None
+            extended_rul = rul_hours / max(result.wear_reduction_factor, 1e-6)
+            p_fail = self.survival_model.failure_within(extended_rul, bridge_hours)
+            survival = 1.0 - p_fail
+            best = (result, pct, survival)
+            if p_fail <= self.BRIDGE_FAILURE_TOLERANCE:
+                break
+
+        result, pct, survival = best
+        return result, pct, survival

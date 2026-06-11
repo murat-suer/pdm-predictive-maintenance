@@ -241,6 +241,7 @@ export default function FleetOverview() {
                 <th className="pb-2 pr-4 font-medium">{t('fleet.col.line')}</th>
                 <th className="pb-2 pr-4 font-medium">{t('fleet.col.status')}</th>
                 <th className="pb-2 pr-4 font-medium">{t('fleet.col.rul')}</th>
+                <th className="pb-2 pr-4 font-medium">{t('fleet.col.health')}</th>
                 <th className="pb-2 pr-4 font-medium">{t('fleet.col.reliability')}</th>
                 <th className="pb-2 pr-4 font-medium">{t('fleet.col.topAlarm')}</th>
                 <th className="pb-2 pr-4 font-medium">{t('fleet.col.trend')}</th>
@@ -272,7 +273,24 @@ export default function FleetOverview() {
                     </span>
                   </td>
                   <td className="py-2.5 pr-4 font-mono text-text-secondary">
-                    {m.rul_hours != null ? m.rul_hours.toFixed(0) : '—'}
+                    {m.rul_hours == null ? '—' : m.rul_hours < 1 ? '<1' : m.rul_hours.toFixed(0)}
+                  </td>
+                  <td className="py-2.5 pr-4 font-mono">
+                    {m.health_score == null ? (
+                      <span className="text-text-tertiary">—</span>
+                    ) : (
+                      <span
+                        className={
+                          m.health_score < 0.55
+                            ? 'text-alarm-p4'
+                            : m.health_score < 0.7
+                              ? 'text-alarm-p3'
+                              : 'text-text-primary'
+                        }
+                      >
+                        {(m.health_score * 100).toFixed(0)}%
+                      </span>
+                    )}
                   </td>
                   <td className="py-2.5 pr-4 font-mono">
                     <span

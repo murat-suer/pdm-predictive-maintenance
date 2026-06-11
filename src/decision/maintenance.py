@@ -108,7 +108,19 @@ def schedule_from_decision(db, r, decision, alarm) -> None:
         )
 
     if scenario == "REDUCE_LOAD":
-        publish_control(r, "SET_LOAD", machine_id=decision.machine_id, factor=REDUCE_LOAD_FACTOR)
+        # The engine picked the minimal reduction that bridges the machine
+        # to the repair slot; apply exactly that, not a fixed default.
+        pct = next(
+            (
+                item.get("load_reduction_percent")
+                for item in decision.scenarios_presented or []
+                if item.get("scenario") == "REDUCE_LOAD"
+                and item.get("load_reduction_percent")
+            ),
+            None,
+        )
+        factor = 1.0 - (float(pct) / 100.0) if pct else REDUCE_LOAD_FACTOR
+        publish_control(r, "SET_LOAD", machine_id=decision.machine_id, factor=round(factor, 2))
 
     job = {
         "phase": "START",

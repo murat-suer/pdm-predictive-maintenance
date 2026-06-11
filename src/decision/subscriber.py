@@ -45,6 +45,8 @@ class ScenarioOption:
         is_valid: bool = True,
         expected_cost: float = 0.0,
         failure_probability: float = 0.0,
+        load_reduction_percent: float | None = None,
+        survival_to_repair: float | None = None,
     ):
         self.scenario = scenario
         self.cost = cost
@@ -52,6 +54,8 @@ class ScenarioOption:
         self.is_valid = is_valid
         self.expected_cost = expected_cost
         self.failure_probability = failure_probability
+        self.load_reduction_percent = load_reduction_percent
+        self.survival_to_repair = survival_to_repair
 
     def get(self, key, default=None):
         return getattr(self, key, default)
@@ -294,6 +298,10 @@ class DecisionSubscriber:
                         "expected_cost": round(s.expected_cost, 2),
                         "failure_probability": round(s.failure_probability, 4),
                         "is_recommended": s.is_recommended,
+                        "load_reduction_percent": s.load_reduction_percent,
+                        "survival_to_repair": round(s.survival_to_repair, 4)
+                        if s.survival_to_repair is not None
+                        else None,
                     }
                     for s in scenarios
                 ]
@@ -518,6 +526,8 @@ class DecisionSubscriber:
                 is_valid=r.is_valid,
                 expected_cost=r.expected_cost,
                 failure_probability=r.failure_probability,
+                load_reduction_percent=getattr(r, "load_reduction_percent", None),
+                survival_to_repair=getattr(r, "survival_to_repair", None),
             )
             for r in recommendations
         ]
