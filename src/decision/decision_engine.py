@@ -301,9 +301,11 @@ class DecisionEngine:
             # Slower wear extends the remaining life: RUL / wear factor.
             extended_rul = rul_hours / max(result.wear_reduction_factor, 1e-6)
             p_fail = self.survival_model.failure_within(extended_rul, horizon)
-            production_loss_horizon = result.production_loss * horizon
+            # result.cost already holds the full bridge-horizon production loss,
+            # so expected_cost follows the same pattern as PLANNED / SHUTDOWN:
+            # direct cost + residual failure risk.
             result.failure_probability = p_fail
-            result.expected_cost = production_loss_horizon + p_fail * rtf
+            result.expected_cost = result.cost + p_fail * rtf
         elif result.scenario == DecisionScenario.PLANNED:
             # Residual risk: machine must hold until the planned slot at the
             # next shift boundary; the shift-change window is non-production
@@ -417,24 +419,31 @@ class DecisionEngine:
         load_factor = 1.0 - (load_reduction_percent / 100.0)
         wear_reduction_factor = load_factor ** machine_profile.weibull_beta
 
-        # Cost = partial production loss (not full stop)
-        production_loss = (
+        # Per-hour production loss rate (partial throughput hit)
+        production_loss_rate = (
             machine_profile.production_rate_per_hour *
             (load_reduction_percent / 100.0)
         )
 
+        # Total cost = lost production from running at reduced load across the
+        # whole decision horizon — the SAME window over which the residual
+        # failure risk is priced in _attach_expected_cost. Charging a shorter
+        # window while crediting survival over the full horizon would let
+        # REDUCE_LOAD win spuriously.
+        total_production_loss = production_loss_rate * DECISION_HORIZON_HOURS
+
         return DecisionResult(
             scenario=DecisionScenario.REDUCE_LOAD,
-            cost=production_loss,
+            cost=total_production_loss,
             is_valid=True,
-            production_loss=production_loss,
+            production_loss=production_loss_rate,
             cascade_cost=0.0,
             labor_cost=0.0,
             emergency_cost=0.0,
             parts_cost=0.0,
             survival_probability=1.0,
             wear_reduction_factor=wear_reduction_factor,
-            cost_rate=production_loss,
+            cost_rate=production_loss_rate,
             prescriptive_action=PrescriptiveAction(
                 action_type="SLOWDOWN",
                 description=f"Reduce load by {load_reduction_percent}%",
@@ -607,8 +616,9 @@ class DecisionEngine:
 
         return options
 
-    # Candidate load reductions, mildest first; the bridge the machine must
-    # survive is the planned-repair lead plus the repair itself.
+    # Candidate load reductions, mildest first. The window the machine must
+    # survive is the full decision horizon — the same window the REDUCE_LOAD
+    # cost and risk are priced over.
     LOAD_REDUCTION_CANDIDATES = (20.0, 40.0, 60.0)
     BRIDGE_FAILURE_TOLERANCE = 0.05
 
@@ -617,16 +627,16 @@ class DecisionEngine:
         machine_profile: MachineProfile,
         rul_hours: float,
     ) -> tuple[DecisionResult, float | None, float | None]:
-        """Pick the MINIMAL load reduction that safely bridges to repair.
+        """Pick the MINIMAL load reduction that safely bridges the window.
 
         The operator's question is "how little can I slow production and
-        still make it to the planned slot?" — so candidates are tried
-        mildest-first and the first one whose failure probability over the
-        bridge window stays within tolerance wins. If even the deepest
-        reduction cannot bridge, it is still returned (best effort), with
-        its honest survival number.
+        still make it through the decision window?" — so candidates are tried
+        mildest-first and the first one whose failure probability over that
+        window stays within tolerance wins. If even the deepest reduction
+        cannot bridge, it is still returned (best effort), with its honest
+        survival number.
         """
-        bridge_hours = PLANNED_LEAD_HOURS + DEFAULT_PLANNED_DOWNTIME_HOURS
+        bridge_hours = DECISION_HORIZON_HOURS
 
         best: tuple[DecisionResult, float, float] | None = None
         for pct in self.LOAD_REDUCTION_CANDIDATES:

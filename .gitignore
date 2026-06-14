@@ -44,3 +44,8 @@ htmlcov/
 .env
 .env.*
 !.env.example
+
+# Trained model artifacts (regenerated at runtime / by tests)
+src/ml/model_store/*.joblib
+src/ml/model_store/*.joblib.sha256
+src/ml/model_store/*.model_card.json

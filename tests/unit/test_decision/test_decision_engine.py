@@ -268,14 +268,45 @@ class TestReduceLoadScenario:
         assert result.wear_reduction_factor < 1.0
 
     def test_reduce_load_cost_is_production_loss(self, engine, ac_profile):
-        """REDUCE_LOAD cost = partial production loss (not full stop)."""
+        """REDUCE_LOAD cost = total bridge-horizon production loss (not a per-hour rate).
+
+        cost = rate × load_pct × bridge_hours, so it is in the same currency
+        as PLANNED / SHUTDOWN (a total, not a rate).  With 20% reduction and
+        a 12-hour bridge the total cost exceeds the per-hour rate.
+        """
         result = engine.evaluate(
             scenario=DecisionScenario.REDUCE_LOAD,
             machine_profile=ac_profile,
             load_reduction_percent=20.0,
         )
         assert result.cost > 0.0
-        assert result.cost < ac_profile.production_rate_per_hour
+        # Total cost must exceed one hour of full production (it covers the
+        # whole bridge-to-repair window, not just a single hour).
+        assert result.cost > ac_profile.production_rate_per_hour
+
+    def test_reduce_load_cost_and_expected_cost_same_basis(self, engine, ac_profile):
+        """cost and expected_cost must be on the same basis.
+
+        With a very high RUL (failure probability ≈ 0) the residual risk term
+        p_fail × rtf ≈ 0, so expected_cost ≈ cost.  Previously cost was a
+        per-hour rate while expected_cost was a horizon total, making them
+        differ by ~48×.  After the fix the two must be within 5% of each other
+        when failure probability is negligible.
+        """
+        high_rul_result = engine.evaluate(
+            scenario=DecisionScenario.REDUCE_LOAD,
+            machine_profile=ac_profile,
+            rul_hours=10_000.0,  # far-future: p_fail ≈ 0
+            load_reduction_percent=20.0,
+        )
+        assert high_rul_result.is_valid
+        assert high_rul_result.failure_probability < 0.01  # confirms near-zero risk
+
+        ratio = high_rul_result.expected_cost / high_rul_result.cost
+        assert 0.95 <= ratio <= 1.05, (
+            f"expected_cost / cost = {ratio:.3f}; the two must be within 5% "
+            "when failure risk is negligible (same-basis invariant)"
+        )
 
     def test_reduce_load_higher_beta_more_effective(self, engine):
         """Higher Weibull β means REDUCE_LOAD is more effective."""
