@@ -75,10 +75,32 @@ class RULPredictor:
 
     def train(self, X: np.ndarray, y: np.ndarray, feature_names: list) -> None:
         from xgboost import XGBRegressor
+
+        from src.ml.model_card import compute_rul_holdout_metrics
+
         if len(X) < 50:
             logger.warning(f"{self.machine_id}: insufficient RUL training data ({len(X)} rows, minimum 50)")
             return
         self.feature_names = feature_names
+
+        # Compute held-out metrics BEFORE fitting the production model so
+        # the evaluation fit is independent of the final artefact.
+        holdout_metrics = compute_rul_holdout_metrics(X, y)
+        if holdout_metrics["status"] == "measured":
+            logger.info(
+                "[ML] RUL holdout eval: %s  MAE=%.2f h  RMSE=%.2f h  (n_test=%d)",
+                self.machine_id,
+                holdout_metrics["holdout_mae_hours"],
+                holdout_metrics["holdout_rmse_hours"],
+                holdout_metrics["holdout_n_test"],
+            )
+        else:
+            logger.info(
+                "[ML] RUL holdout eval skipped for %s: %s",
+                self.machine_id,
+                holdout_metrics.get("reason"),
+            )
+
         if self.mode == "single":
             self.model = XGBRegressor(
                 n_estimators=100,
@@ -95,7 +117,7 @@ class RULPredictor:
             self.ensemble = build_default_rul_voting_ensemble()
             self.ensemble.fit(X, y)
             self.model = next(est for name, est in self.ensemble.members if name == "XGBoost")
-        self._save_model(len(X))
+        self._save_model(len(X), holdout_metrics=holdout_metrics)
         logger.info(f"[ML] RUL {self.mode} trained: {self.machine_id} ({len(X)} samples, mode={self.mode})")
 
     def predict(
@@ -337,7 +359,7 @@ class RULPredictor:
         confidence = max(0.0, min(1.0, 1.0 - interval_width / (rul_predicted + 1.0)))
         return {"p10": p10, "p90": p90, "confidence": confidence}
 
-    def _save_model(self, training_rows: int):
+    def _save_model(self, training_rows: int, *, holdout_metrics: dict | None = None):
         store = get_model_store()
         os.makedirs(store, exist_ok=True)
         ensemble_payload = None
@@ -383,6 +405,7 @@ class RULPredictor:
                 "n_ticks_to_endpoint": self._n_ticks_to_endpoint,
             },
             training_rows=training_rows,
+            metrics=holdout_metrics,
         )
 
     def _load_model(self):

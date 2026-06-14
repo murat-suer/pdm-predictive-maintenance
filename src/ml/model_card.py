@@ -2,16 +2,26 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from src.ml.model_store import get_model_store
+
+logger = logging.getLogger(__name__)
 
 KNOWN_LIMITATIONS = [
     "Simulation-trained - not validated on production-grade sensor data",
     "Requires baseline calibration; out-of-distribution machines may underperform",
 ]
+
+# Minimum total rows required to attempt a temporal holdout split.
+# With 80/20 train/test, 100 rows gives at least 20 test rows — enough
+# for a meaningful MAE estimate without risking near-zero test sets.
+_MIN_SAMPLES_FOR_HOLDOUT = 100
 
 
 def write_model_card(
@@ -126,7 +136,105 @@ def _training_signature(
     return f"sha256:{hashlib.sha256(payload).hexdigest()}"
 
 
+def compute_rul_holdout_metrics(
+    X: np.ndarray,
+    y: np.ndarray,
+) -> dict[str, Any]:
+    """Compute held-out MAE and RMSE for a RUL predictor via a temporal split.
+
+    Splits X/y into the first 80 % (train) and last 20 % (test) by row order.
+    Row order is assumed to be chronological, as guaranteed by the callers in
+    :class:`src.ml.rul_predictor.RULPredictor`.  This is an honest single
+    out-of-sample evaluation — not a random split — preserving the
+    project's "no leak" property.
+
+    Parameters
+    ----------
+    X:
+        Feature matrix, already in chronological order.
+    y:
+        RUL target vector, same order.
+
+    Returns
+    -------
+    dict with keys:
+        ``holdout_mae_hours``  — float, mean absolute error on the test split.
+        ``holdout_rmse_hours`` — float, root-mean-squared error on the test split.
+        ``holdout_n_test``     — int, number of test rows used.
+        ``holdout_n_train``    — int, number of train rows used.
+        ``split_method``       — str, always ``"temporal_80_20"``.
+        ``status``             — str, ``"measured"`` on success or ``"insufficient_samples"``
+                                 if there were not enough rows.
+        ``reason``             — str | None, non-None only when status != "measured".
+    """
+    n = len(X)
+    if n < _MIN_SAMPLES_FOR_HOLDOUT:
+        return {
+            "status": "insufficient_samples",
+            "reason": f"need >= {_MIN_SAMPLES_FOR_HOLDOUT} rows, got {n}",
+            "holdout_mae_hours": None,
+            "holdout_rmse_hours": None,
+            "holdout_n_test": None,
+            "holdout_n_train": None,
+            "split_method": "temporal_80_20",
+        }
+
+    from xgboost import XGBRegressor
+
+    cut = max(1, int(round(n * 0.80)))
+    # Guard: ensure at least 10 rows on each side
+    cut = max(10, min(cut, n - 10))
+
+    X_train, X_test = X[:cut], X[cut:]
+    y_train, y_test = y[:cut], y[cut:]
+
+    try:
+        model = XGBRegressor(
+            n_estimators=100,
+            max_depth=4,
+            learning_rate=0.05,
+            subsample=0.8,
+            random_state=42,
+            n_jobs=2,
+        )
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+        residuals = y_test - y_pred
+        holdout_mae = float(np.mean(np.abs(residuals)))
+        holdout_rmse = float(np.sqrt(np.mean(residuals ** 2)))
+        return {
+            "status": "measured",
+            "reason": None,
+            "holdout_mae_hours": round(holdout_mae, 4),
+            "holdout_rmse_hours": round(holdout_rmse, 4),
+            "holdout_n_test": int(len(y_test)),
+            "holdout_n_train": int(len(y_train)),
+            "split_method": "temporal_80_20",
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("RUL holdout metric computation failed: %s", exc)
+        return {
+            "status": "computation_error",
+            "reason": f"{type(exc).__name__}: {exc}",
+            "holdout_mae_hours": None,
+            "holdout_rmse_hours": None,
+            "holdout_n_test": None,
+            "holdout_n_train": None,
+            "split_method": "temporal_80_20",
+        }
+
+
 def _unmeasured_metrics(model_kind: str) -> dict[str, Any]:
+    if model_kind == "rul_predictor":
+        return {
+            "status": "insufficient_samples",
+            "reason": "no training data available at card-creation time",
+            "holdout_mae_hours": None,
+            "holdout_rmse_hours": None,
+            "holdout_n_test": None,
+            "holdout_n_train": None,
+            "split_method": "temporal_80_20",
+        }
     return {
         "status": "not_measured_in_current_simulation",
         "note": f"{model_kind} model cards expose provenance; holdout performance metrics require labeled evaluation data.",
