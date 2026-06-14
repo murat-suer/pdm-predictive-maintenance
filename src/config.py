@@ -20,7 +20,11 @@ class Settings(BaseSettings):
     # injection; 500x compresses a full machine life into ~17 minutes.
     SIMULATION_SPEED: int = Field(default=10, ge=1)
     GLOBAL_SEED: int = 42
-    SENSOR_PRESENT_PROBABILITY: float = Field(default=0.98, ge=0.0, le=1.0)
+    # Per-reading probability that a sensor reading is marked present=True.
+    # Env override: SENSOR_DROPOUT_PROBABILITY (e.g. 0.999 for pristine lab,
+    # 0.95 for noisy industrial deployment). Single source of truth — read
+    # by data_generator/independent_scheduler.py via get_settings().
+    SENSOR_DROPOUT_PROBABILITY: float = Field(default=0.99, ge=0.0, le=1.0)
 
     # Maintenance pacing: sim-hour durations are converted to real seconds by
     # SIMULATION_SPEED, then capped so the closed loop stays watchable at low

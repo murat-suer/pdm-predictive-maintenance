@@ -348,7 +348,6 @@ def process_event(
     r,
     machine_states: dict,
     pipeline_state: PipelineState,
-    fault_aggregator=None,
     cusum_detectors: dict | None = None,
     fault_classifier=None,
 ):

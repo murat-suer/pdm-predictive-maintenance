@@ -27,13 +27,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-import os
 import time as wall_time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
+
+from src.config import get_settings
 
 from .fft_engine import generate_fft_data
 from .machines import MACHINE_CONFIGS, SHIFT_LOAD_PROFILES
@@ -57,17 +58,16 @@ logger = logging.getLogger(__name__)
 #
 # Real factories have intermittent sensor connectivity. The
 # `_PRESENT_PROBABILITY` knob controls the per-reading probability
-# that a reading is marked `present=False` (the sensor "went offline"
-# for this step). The default 0.99 (1% dropout) is calibrated to
-# produce a visible-but-rare "sensor health" pattern on the
-# dashboard without overwhelming the ML pipeline.
+# that a reading is marked `present=True` (sensor online). The
+# default 0.99 (1% dropout) is calibrated to produce a visible-but-rare
+# "sensor health" pattern on the dashboard without overwhelming the ML
+# pipeline.
 #
-# Configurable via the env var `SENSOR_DROPOUT_PROBABILITY` so
-# different deployments can tune the rate (e.g. 0.999 for a pristine
-# lab fixture, 0.95 for a noisy industrial deployment). Falls back
-# to 0.99 if the env var is unset or unparseable.
-_PRESENT_PROBABILITY = float(os.getenv("SENSOR_DROPOUT_PROBABILITY", "0.99"))
-_PRESENT_PROBABILITY = max(0.0, min(1.0, _PRESENT_PROBABILITY))
+# Configured via Settings.SENSOR_DROPOUT_PROBABILITY (env var of the
+# same name), making config.py the single source of truth. Examples:
+#   SENSOR_DROPOUT_PROBABILITY=0.999  — pristine lab fixture
+#   SENSOR_DROPOUT_PROBABILITY=0.95   — noisy industrial deployment
+_PRESENT_PROBABILITY = get_settings().SENSOR_DROPOUT_PROBABILITY
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

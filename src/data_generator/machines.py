@@ -8,7 +8,10 @@ CRITICAL RULES:
 - All sensor nominal values defined as mu + sigma pairs (never single numbers)
 - degradation_weight per machine must sum to 1.0 (enforced at import)
 - Weibull beta/eta drawn once per machine start from Gauss(beta, beta_std)
-- random.uniform is FORBIDDEN everywhere in this project
+- random.uniform is FORBIDDEN inside the data_generator package (use seeded
+  np.random.Generator for reproducible physics simulation). Operational
+  jitter outside this package (e.g. scheduling delays in database/models.py)
+  may use stdlib random where reproducibility is not required.
 
 NOTE ON ETA VALUES:
   Original IEEE 493 / TEMA / CEMA reference values are 720-1020 hours

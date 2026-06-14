@@ -93,12 +93,23 @@ def test_low_score_healthy_outlier_does_not_enter_alarm_workflow():
 
 
 def test_publish_confirmed_fault_event_serializes_payload():
+    from dataclasses import dataclass
+
     from src.ml.event_publisher import SYSTEM_STREAM, publish_confirmed_fault_event
-    from src.ml.fault_aggregator import ConfirmedFault
+
+    @dataclass(frozen=True)
+    class _FaultStub:
+        machine_id: str
+        fault_type: str
+        confidence: float
+        votes: int
+        window_size: int
+        time_to_consensus_s: float
+
     redis_client = MagicMock()
     publish_confirmed_fault_event(
         redis_client,
-        ConfirmedFault(
+        _FaultStub(
             machine_id="AC-201",
             fault_type="BEARING_FAULT",
             confidence=0.72,

@@ -4,7 +4,6 @@ PDM v3 Decision Module.
 Provides:
 - EscalationPolicy: Role-based escalation logic
 - AlarmStateMachine: ISA-18.2 compliant state management
-- CostCalculator: Honest cost-savings calculator
 - ShiftCalendar: Shift-aware maintenance window recommendation
 - FailureModeLibrary: YAML-based FMEA failure mode matching
 """
@@ -19,12 +18,6 @@ from src.decision.alarm_state_machine import (
 )
 from src.decision.alarm_state_machine import (
     Role as AlarmRole,
-)
-from src.decision.cost_calculator import (
-    CostBreakdown,
-    CostCalculator,
-    CostConfig,
-    DecisionType,
 )
 from src.decision.escalation import (
     EMERGENCY_THRESHOLD,
@@ -63,11 +56,6 @@ __all__ = [
     "AuditEntry",
     "MAX_SHELVE_DURATION_HOURS",
     "MAX_SUPPRESS_DURATION_DAYS",
-    # Cost Calculator
-    "CostCalculator",
-    "CostBreakdown",
-    "CostConfig",
-    "DecisionType",
     # Shift Awareness
     "ShiftCalendar",
     "Shift",
