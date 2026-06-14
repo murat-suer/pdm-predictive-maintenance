@@ -11,7 +11,7 @@ interface LayoutProps {
 const navItems: { labelKey: TranslationKey; icon: string; href: string }[] = [
   { labelKey: 'nav.fleet', icon: '≡', href: '/fleet' },
   { labelKey: 'nav.decisions', icon: '⚡', href: '/decisions' },
-  { labelKey: 'nav.reports', icon: '📊', href: '/reports' },
+  { labelKey: 'nav.analytics', icon: '📊', href: '/analytics' },
   { labelKey: 'nav.shiftHandover', icon: '⇄', href: '/shift-handover' },
   { labelKey: 'nav.auditTrail', icon: '📋', href: '/audit-trail' },
   { labelKey: 'nav.system', icon: '🛈', href: '/system' },

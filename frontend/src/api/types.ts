@@ -225,3 +225,88 @@ export interface SensorSeries {
   minutes: number
   series: Record<string, SensorSeriesPoint[]>
 }
+
+// ── Analytics API types ──────────────────────────────────────────────────────
+
+export interface DecisionMixItem {
+  scenario: string
+  count: number
+}
+
+export interface DecisionMixResponse {
+  window_started_at: string
+  total: number
+  items: DecisionMixItem[]
+}
+
+export interface FaultDistributionItem {
+  fault_type: string
+  count: number
+}
+
+export interface FaultDistributionResponse {
+  window_started_at: string
+  total: number
+  items: FaultDistributionItem[]
+}
+
+export interface SavingsTimeseriesPoint {
+  t: string
+  cumulative_eur: number
+  incremental_eur: number
+}
+
+export interface SavingsTimeseriesResponse {
+  window_started_at: string
+  points: SavingsTimeseriesPoint[]
+}
+
+export interface MhiHistoryPoint {
+  t: string
+  mhi: number
+}
+
+export interface MhiHistoryMachine {
+  machine_id: string
+  points: MhiHistoryPoint[]
+}
+
+export interface MhiHistoryResponse {
+  window_started_at: string
+  machines: MhiHistoryMachine[]
+}
+
+export interface MaintenanceTimelineEvent {
+  machine_id: string
+  scenario: string
+  performed_at: string
+  actual_cost_eur: number
+  savings_eur: number
+  downtime_minutes: number
+}
+
+export interface MaintenanceTimelineResponse {
+  window_started_at: string
+  events: MaintenanceTimelineEvent[]
+}
+
+export interface DecisionStatsByActor {
+  decided_by: string
+  count: number
+}
+
+export interface DecisionStatsBotVsHuman {
+  bot: number
+  human: number
+}
+
+export interface DecisionStatsResponse {
+  window_started_at: string
+  total: number
+  auto_approved: number
+  overridden: number
+  override_rate: number
+  avg_response_time_s: number
+  by_actor: DecisionStatsByActor[]
+  bot_vs_human: DecisionStatsBotVsHuman
+}

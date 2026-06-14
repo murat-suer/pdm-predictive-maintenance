@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.api import live
 from src.api.routers import (
     alarms,
+    analytics,
     anomaly,
     audit,
     cost_optimizer,
@@ -76,6 +77,7 @@ app.include_router(decisions.router, prefix=API_V1_PREFIX)
 app.include_router(audit.router, prefix=API_V1_PREFIX)
 app.include_router(work_orders.router, prefix=API_V1_PREFIX)
 app.include_router(savings.router, prefix=API_V1_PREFIX)
+app.include_router(analytics.router, prefix=API_V1_PREFIX)
 app.include_router(shift_reports.router, prefix=API_V1_PREFIX)
 
 # Live data over WebSocket

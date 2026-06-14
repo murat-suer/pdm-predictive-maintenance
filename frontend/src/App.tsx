@@ -3,7 +3,7 @@ import Layout from './components/Layout'
 import FleetOverview from './pages/FleetOverview'
 import DecisionScreen from './pages/DecisionScreen'
 import MachineDetail from './pages/MachineDetail'
-import Reports from './pages/Reports'
+import Analytics from './pages/Analytics'
 import ShiftHandover from './pages/ShiftHandover'
 import AuditTrail from './pages/AuditTrail'
 import SystemOverview from './pages/SystemOverview'
@@ -19,7 +19,9 @@ export default function App() {
             <Route path="/fleet" element={<FleetOverview />} />
             <Route path="/machines/:id" element={<MachineDetail />} />
             <Route path="/decisions" element={<DecisionScreen />} />
-            <Route path="/reports" element={<Reports />} />
+            {/* /reports redirects to /analytics for any bookmarked links */}
+            <Route path="/reports" element={<Navigate to="/analytics" replace />} />
+            <Route path="/analytics" element={<Analytics />} />
             <Route path="/shift-handover" element={<ShiftHandover />} />
             <Route path="/audit-trail" element={<AuditTrail />} />
             <Route path="/system" element={<SystemOverview />} />
