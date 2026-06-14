@@ -26,8 +26,9 @@ Most PdM demos draw random numbers and call them predictions. This project does 
   onto Line B.
 - **Honest ML discipline.** Purged k-fold cross-validation with embargo
   (leak-proof temporal splits), split-conformal prediction intervals for RUL with
-  distribution-free coverage guarantees, a physics-informed neural network whose
-  loss enforces Weibull hazard boundary conditions and RUL monotonicity, SHAP
+  distribution-free coverage guarantees, an experimental physics-informed neural
+  network (built and tested, not yet on the live inference path) whose loss
+  enforces Weibull mean-life boundary conditions and RUL monotonicity, SHAP
   attributions computed per anomaly, and model cards with SHA256 artifact hashes.
 - **Operations-grade decision layer.** ISA-18.2 alarm state machine with alarm-flood
   suppression (R-010), a 12-mode FMEA library with RPN scoring, cost-optimal
@@ -36,7 +37,8 @@ Most PdM demos draw random numbers and call them predictions. This project does 
   every automated decision.
 - **Real plumbing.** TimescaleDB hypertables with compression and continuous
   aggregates, Redis Streams between services, FastAPI + WebSocket live feed,
-  React 19 dashboard — all verified end to end in CI and via docker compose.
+  React 19 dashboard — the whole stack comes up from a single `docker compose`.
+  CI runs ruff, the full unit suite, and the production frontend build.
 
 ## Architecture
 
@@ -50,7 +52,7 @@ flowchart LR
         RD[("Redis Streams")]
     end
     subgraph Intelligence
-        ML["ML Service<br/>IsolationForest + SHAP<br/>XGBoost / PINN RUL<br/>conformal intervals"]
+        ML["ML Service<br/>IsolationForest + SHAP<br/>XGBoost RUL (PINN experimental)<br/>conformal intervals"]
         DEC["Decision Service<br/>ISA-18.2 alarms · FMEA<br/>cost-optimal scenarios<br/>EU AI Act audit log"]
     end
     subgraph Delivery
@@ -103,9 +105,12 @@ the controls.
 
 1. ML confirms an anomaly over consecutive cycles (no single-spike alarms) and
    classifies the fault from SHAP attributions + sensor patterns.
-2. The decision engine generates four costed scenarios. `REDUCE_LOAD` is only
-   offered while wear-out dominates (Weibull β > 1); `SHUTDOWN` is excluded when
-   survival probability is already below 40 %.
+2. The decision engine generates five costed scenarios (observe / dispatch
+   technician / reduce load / planned / shutdown). `REDUCE_LOAD` is only offered
+   while wear-out dominates (Weibull β > 1); `SHUTDOWN` stays on the table even
+   when survival margin is thin — flagged urgent rather than hidden, because
+   excluding it once left "keep watching" as the cheapest option on a machine
+   about to fail.
 3. The operator approves a scenario in the dashboard — or the watchdog
    auto-approves the AI recommendation when the response window expires
    (ISA-18.2 escalation).
@@ -118,7 +123,7 @@ the controls.
 ```bash
 # Backend
 pip install -e .[api,ml,test]
-pytest tests/unit -q            # 1 500+ tests
+pytest tests/unit -q            # 1,424 tests
 ruff check src scripts tests
 
 # Frontend
@@ -142,14 +147,14 @@ uvicorn src.api.app:app --reload           # REST + WebSocket API
 ```
 src/
 ├── data_generator/   # Weibull engine, sensor physics, async simulation engine
-├── ml/               # detectors, RUL (XGBoost/PINN), conformal, SHAP, evaluation/
+├── ml/               # detectors, RUL (XGBoost; PINN experimental), conformal, SHAP, evaluation/
 ├── decision/         # ISA-18.2 state machines, FMEA library, cost engine, audit
 ├── api/              # FastAPI routers, WebSocket live feed, Pydantic schemas
 └── database/         # SQLAlchemy models (TimescaleDB), connection management
 frontend/             # React 19 + TypeScript + Tailwind dashboard
 alembic/              # schema migrations
 scripts/init_db.py    # idempotent DB initializer (hypertables, caggs, seeds)
-tests/unit/           # 1 500+ tests across all layers
+tests/unit/           # 1,424 tests across all layers
 docs/                 # FMEA worksheets, O&M manuals, maintenance database
 ```
 

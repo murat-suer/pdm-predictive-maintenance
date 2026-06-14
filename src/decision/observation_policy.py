@@ -106,7 +106,16 @@ def apply_observe_escalation(
         }
         insert_at = 1 if scenarios and scenarios[0].get("scenario") == "OBSERVE" else 0
         scenarios.insert(insert_at, dispatch)
-        if recommendation is None or (not identified and recommendation == "OBSERVE"):
+        # For unidentified faults the cost model's preference (OBSERVE or
+        # PLANNED) is unreliable: we don't know what we're watching or
+        # planning for. A physical inspection (€150, no line stop) is
+        # always preferred over a blind OBSERVE *or* a planned overhaul
+        # whose scope is unknown, unless the engine already concluded the
+        # machine is about to fail (SHUTDOWN) — in that case the stronger
+        # signal wins.
+        if recommendation is None or (
+            not identified and recommendation != "SHUTDOWN"
+        ):
             recommendation = DISPATCH_SCENARIO
 
     if recommendation is None and scenarios:

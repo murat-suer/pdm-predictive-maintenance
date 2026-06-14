@@ -56,11 +56,30 @@ class TestApplyObserveEscalation:
         assert DISPATCH_SCENARIO in [s["scenario"] for s in scenarios]
         assert rec == "OBSERVE"
 
-    def test_planned_recommendation_is_not_overridden(self):
+    def test_planned_overridden_to_dispatch_for_unidentified_fault(self):
+        # When the cost model picks PLANNED but the fault is unclassified,
+        # scheduling maintenance for an unknown problem is worse than a
+        # €150 on-line inspection — dispatch must take priority.
         scenarios, rec = apply_observe_escalation(
             make_scenarios(recommended="PLANNED"), "PLANNED", 2, False
         )
+        assert rec == DISPATCH_SCENARIO
+
+    def test_planned_recommendation_kept_for_identified_fault(self):
+        # An identified fault with a streak: the cost model knows what it
+        # is recommending — PLANNED is correct, dispatch is merely offered.
+        scenarios, rec = apply_observe_escalation(
+            make_scenarios(recommended="PLANNED"), "PLANNED", 2, True
+        )
         assert rec == "PLANNED"
+
+    def test_shutdown_recommendation_is_not_overridden(self):
+        # SHUTDOWN means imminent failure — a dispatch inspection would be
+        # too slow.  The stronger signal must win.
+        scenarios, rec = apply_observe_escalation(
+            make_scenarios(recommended="SHUTDOWN"), "SHUTDOWN", 2, False
+        )
+        assert rec == "SHUTDOWN"
 
     def test_fourth_decision_drops_observe(self):
         scenarios, rec = apply_observe_escalation(make_scenarios(), "OBSERVE", 3, False)
