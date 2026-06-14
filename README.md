@@ -195,6 +195,14 @@ This is a portfolio system trained on simulated data — and it says so:
 - Conformal RUL intervals carry their stated coverage guarantee only once enough
   failure residuals accumulate; cold-start predictions fall back to a labelled
   Weibull estimate (`method: weibull_fallback`).
+- Fault *classification* is a rule-based signature library (weighted
+  sensor-threshold rules per machine type), not a learned classifier. It names a
+  fault only above a confidence threshold and deliberately leaves ambiguous or
+  early-stage anomalies `UNCLASSIFIED` rather than guessing — over a recent
+  multi-day run roughly 40 % were unclassified at decision time. That is by
+  design: an unidentified anomaly that keeps recurring is escalated to a
+  technician inspection (`DISPATCH_TECHNICIAN`) instead of being watched
+  indefinitely or mislabelled.
 - The API ships without authentication — appropriate for a read-mostly demo
   behind a reverse proxy, not for production.
 

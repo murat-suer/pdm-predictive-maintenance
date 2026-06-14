@@ -5,6 +5,13 @@ Fault Type Classifier system that identifies specific fault types
 (Bearing/Oil/Fouling/Belt) from anomaly data using SHAP features and sensor patterns.
 
 Supports AC (Air Compressor), HX (Heat Exchanger), and CM (Conveyor Motor) machines.
+
+This is a rule-based signature library (weighted sensor-threshold rules per
+machine type), not a learned classifier. It deliberately ABSTAINS — returning
+UNCLASSIFIED_ANOMALY — when no signature clears the confidence threshold, which
+is common for ambiguous or early-stage degradation. Abstaining is intentional:
+a recurring unidentified anomaly is escalated to a technician inspection by the
+decision layer (see decision/observation_policy.py) rather than mislabelled.
 """
 
 from collections.abc import Callable
