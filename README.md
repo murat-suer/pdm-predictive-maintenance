@@ -38,7 +38,9 @@ Most PdM demos draw random numbers and call them predictions. This project does 
 - **Real plumbing.** TimescaleDB hypertables with compression and continuous
   aggregates, Redis Streams between services, FastAPI + WebSocket live feed,
   React 19 dashboard — the whole stack comes up from a single `docker compose`.
-  CI runs ruff, the full unit suite, and the production frontend build.
+  CI runs ruff, the full unit suite, the production frontend build, and a
+  docker-compose smoke test that boots the whole stack and checks the API
+  answers end to end through the frontend proxy.
 
 ## Architecture
 

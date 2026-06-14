@@ -57,3 +57,49 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  smoke:
+    name: Stack smoke test (docker compose)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      POSTGRES_PASSWORD: ci_smoke_password
+      HTTP_PORT: "8080"
+      CORS_ALLOW_ORIGINS: "*"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and start the full stack
+        run: docker compose up -d --build
+
+      - name: API responds through the frontend proxy and the fleet is seeded
+        run: |
+          for i in $(seq 1 72); do
+            code=$(curl -s -o machines.json -w "%{http_code}" http://localhost:8080/api/v1/machines || echo 000)
+            if [ "$code" = "200" ]; then
+              count=$(jq 'length' machines.json 2>/dev/null || echo 0)
+              echo "API up after ${i} tries; machines=$count"
+              if [ "${count:-0}" -ge 1 ]; then
+                echo "PASS: API serves $count machines end to end (frontend -> api -> db)."
+                exit 0
+              fi
+            fi
+            echo "waiting for stack... (try $i, http=$code)"
+            sleep 5
+          done
+          echo "FAIL: stack did not become healthy within the timeout"
+          exit 1
+
+      - name: Frontend serves the SPA shell
+        run: |
+          curl -fsS http://localhost:8080/ -o index.html
+          test -s index.html
+          grep -qi "<!doctype html" index.html && echo "PASS: frontend served HTML"
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: docker compose logs --tail 120
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
