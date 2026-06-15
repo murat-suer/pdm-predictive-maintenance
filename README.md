@@ -125,7 +125,7 @@ the controls.
 ```bash
 # Backend
 pip install -e .[api,ml,test]
-pytest tests/unit -q            # 1,424 tests
+pytest tests/unit -q            # 1,292 tests
 ruff check src scripts tests
 
 # Frontend
@@ -156,7 +156,7 @@ src/
 frontend/             # React 19 + TypeScript + Tailwind dashboard
 alembic/              # schema migrations
 scripts/init_db.py    # idempotent DB initializer (hypertables, caggs, seeds)
-tests/unit/           # 1,424 tests across all layers
+tests/unit/           # 1,292 tests across all layers
 docs/                 # FMEA worksheets, O&M manuals, maintenance database
 ```
 

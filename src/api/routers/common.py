@@ -165,8 +165,38 @@ def is_machine_in_maintenance(db: Session, machine_id: str) -> bool:
     return row is not None
 
 
+# Health bands mirror the MHI classifier (mhi_calculator): Good >= 0.70,
+# Critical < 0.55. A machine whose health has fallen into these bands must not
+# show a green "normal" badge just because no discrete alarm has fired yet.
+HEALTH_WARNING_BELOW = 0.70
+HEALTH_CRITICAL_BELOW = 0.55
+
+
+def _health_based_status(db: Session, machine_id: str) -> str | None:
+    """Status implied by the latest MHI alone, or None if healthy / unknown."""
+    row = (
+        db.query(MachineHealthScore.health_score)
+        .filter(MachineHealthScore.machine_id == machine_id)
+        .order_by(MachineHealthScore.calculated_at.desc())
+        .first()
+    )
+    if row is None or row[0] is None:
+        return None
+    health = row[0]
+    if health < HEALTH_CRITICAL_BELOW:
+        return "critical"
+    if health < HEALTH_WARNING_BELOW:
+        return "warning"
+    return None
+
+
 def derive_machine_status(db: Session, machine_id: str) -> tuple[str, str | None]:
-    """Derive dashboard status (normal/warning/critical/maintenance/offline)."""
+    """Derive dashboard status (normal/warning/critical/maintenance/offline).
+
+    Status is the worst of the active-alarm severity and the machine's health
+    classification: degradation that has driven the MHI into the warning or
+    critical band surfaces on the fleet view even before a discrete alarm fires.
+    """
     if is_machine_in_maintenance(db, machine_id):
         return "maintenance", None
     if is_machine_offline(db, machine_id):
@@ -176,4 +206,7 @@ def derive_machine_status(db: Session, machine_id: str) -> tuple[str, str | None
         return "critical", fault_label
     if severity == "WARNING":
         return "warning", fault_label
+    health_status = _health_based_status(db, machine_id)
+    if health_status is not None:
+        return health_status, None
     return "normal", None

@@ -135,6 +135,63 @@ class TestMachinesEndpoints:
         assert machine["rul_hours"] == 96.0
         assert machine["reliability"] == 84.0
 
+    def test_status_reflects_critical_health_without_alarm(self, client, db_session):
+        """A machine whose MHI has collapsed must not read 'normal' just
+        because no discrete alarm has fired (regression: degraded machines
+        showed a green badge on the fleet view)."""
+        now = datetime.now(UTC)
+        db_session.add(
+            SensorReading(
+                machine_id="HX-202", timestamp=now,
+                sensor_name="pressure_drop", value=1.3,
+            )
+        )
+        db_session.add(
+            MachineHealthScore(
+                machine_id="HX-202",
+                calculated_at=now,
+                health_score=0.34,
+                availability_score=0.9,
+                reliability_score=0.9,
+                condition_score=0.34,
+                rul_hours=12.0,
+                confidence=0.9,
+                classification="Critical — Action Required",
+            )
+        )
+        db_session.commit()
+        machine = next(
+            m for m in client.get("/api/v1/machines").json() if m["id"] == "HX-202"
+        )
+        assert machine["status"] == "critical"
+
+    def test_status_reflects_warning_band_health_without_alarm(self, client, db_session):
+        now = datetime.now(UTC)
+        db_session.add(
+            SensorReading(
+                machine_id="CM-303", timestamp=now,
+                sensor_name="belt_tension", value=10.5,
+            )
+        )
+        db_session.add(
+            MachineHealthScore(
+                machine_id="CM-303",
+                calculated_at=now,
+                health_score=0.62,
+                availability_score=0.9,
+                reliability_score=0.9,
+                condition_score=0.62,
+                rul_hours=48.0,
+                confidence=0.9,
+                classification="Good",
+            )
+        )
+        db_session.commit()
+        machine = next(
+            m for m in client.get("/api/v1/machines").json() if m["id"] == "CM-303"
+        )
+        assert machine["status"] == "warning"
+
     def test_machine_offline_without_recent_readings(self, client):
         response = client.get("/api/v1/machines")
         machine = next(m for m in response.json() if m["id"] == "HX-302")
