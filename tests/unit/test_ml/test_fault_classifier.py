@@ -78,11 +78,18 @@ class TestClassifyAC:
         assert result.fault_confidence >= CONFIDENCE_THRESHOLD
 
     def test_motor_overload_ac(self):
+        # MOTOR_OVERLOAD requires motor_current ≥ 26 AND vibration_rms ≥ 4.0.
+        # When vibration is also elevated, BEARING_FAULT would outscore via
+        # higher base_confidence — so SHAP values are required to push
+        # MOTOR_OVERLOAD above BEARING_FAULT. A motor overload anomaly is
+        # characterised by motor_current dominating SHAP (not vibration).
         result = self.clf.classify(
             machine_id="AC-001",
             machine_type="AC",
             anomaly_score=0.7,
-            sensor_readings={"motor_current": 30.0, "vibration_rms": 4.0},
+            sensor_readings={"motor_current": 30.0, "vibration_rms": 4.5},
+            shap_values={"motor_current": 0.8, "vibration_rms": 0.3},
+            top_contributing_sensor="motor_current",
         )
         assert result.fault_type == MOTOR_OVERLOAD
         assert result.fault_confidence >= CONFIDENCE_THRESHOLD

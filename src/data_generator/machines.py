@@ -40,7 +40,7 @@ MACHINE_CONFIGS = {
         "has_bearings": True,
         "pulley_ratio": None,
         "standard": "ISO 10816, API 619",
-        "failure_mode": "Bearing fatigue, oil degradation",
+        "failure_mode": "Bearing fatigue (BPFO harmonic excitation, race spalling)",
         "weibull": {
             # Source: IEEE 493 Table 7-2, rotary compressor category
             # Base eta = 720h, scaled 0.2x for demo visibility
@@ -58,13 +58,18 @@ MACHINE_CONFIGS = {
             "url": "https://engineering.case.edu/bearingdatacenter",
         },
         "sensors": {
+            # AC-201 target fault: BEARING_FAULT
+            # Dominant degrading sensors are vibration_rms + bearing_temp, matching
+            # the BEARING_FAULT classifier rule (weights 0.35/0.30 → now 0.45/0.35).
+            # oil_pressure and outlet_pressure carry minimal weight so they do not
+            # reach the VALVE_LEAK or OIL_DEGRADATION pattern thresholds first.
             "vibration_rms": {
                 "unit": "mm/s",
                 "nominal_mu": 2.5,
                 "nominal_sigma": 0.15,
                 "warning_threshold": 4.5,
                 "critical_threshold": 7.1,
-                "degradation_weight": 0.35,
+                "degradation_weight": 0.45,
                 "degradation_direction": 1,
                 "fft": {
                     "BPFO_coeff": 0.4,
@@ -80,7 +85,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 2.0,
                 "warning_threshold": 85.0,
                 "critical_threshold": 105.0,
-                "degradation_weight": 0.30,
+                "degradation_weight": 0.35,
                 "degradation_direction": 1,
                 "correlation_with": {"vibration_rms": {"mu": 0.75, "sigma": 0.05}},
             },
@@ -90,7 +95,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 0.15,
                 "warning_threshold": 2.8,
                 "critical_threshold": 2.0,
-                "degradation_weight": 0.20,
+                "degradation_weight": 0.10,
                 "degradation_direction": -1,
             },
             "motor_current": {
@@ -99,7 +104,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 0.6,
                 "warning_threshold": 28.0,
                 "critical_threshold": 34.0,
-                "degradation_weight": 0.10,
+                "degradation_weight": 0.07,
                 "degradation_direction": 1,
                 "correlation_with": {"vibration_rms": {"mu": 0.70, "sigma": 0.05}},
             },
@@ -109,7 +114,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 0.15,
                 "warning_threshold": 6.5,
                 "critical_threshold": 5.0,
-                "degradation_weight": 0.05,
+                "degradation_weight": 0.03,
                 "degradation_direction": -1,
                 "downstream_effect": {
                     "target_machine": "HX-202",
@@ -133,7 +138,7 @@ MACHINE_CONFIGS = {
         "has_bearings": False,
         "pulley_ratio": None,
         "standard": "TEMA RGP-T-2.4",
-        "failure_mode": "Fouling (scaling), tube corrosion",
+        "failure_mode": "Fouling — thermal scaling and tube-side deposit growth (TEMA RGP-T-2.4)",
         "weibull": {
             # Source: TEMA RGP-T-2.4, shell&tube fouling statistics
             # Base eta = 960h, scaled 0.2x for demo visibility
@@ -145,6 +150,11 @@ MACHINE_CONFIGS = {
         },
         "cwru_calibration": None,
         "sensors": {
+            # HX-202 target fault: FOULING
+            # Dominant sensors: fouling_index (unique to FOULING rule) + outlet_temp +
+            # pressure_drop. Elevated fouling_index + outlet_temp weight drives the
+            # FOULING signature. flow_rate is kept low so it does not dominate the
+            # FLOW_RESTRICTION pattern (which keys on flow_rate + pressure_drop).
             "inlet_temp": {
                 "unit": "°C",
                 "nominal_mu": 145.0,
@@ -152,7 +162,7 @@ MACHINE_CONFIGS = {
                 "nominal_range": [130, 160],
                 "warning_threshold": None,
                 "critical_threshold": None,
-                "degradation_weight": 0.15,
+                "degradation_weight": 0.05,
                 "degradation_direction": 1,
                 "upstream_sensitivity": {
                     "source_machine": "AC-201",
@@ -167,7 +177,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 2.0,
                 "warning_threshold": 95.0,
                 "critical_threshold": None,
-                "degradation_weight": 0.25,
+                "degradation_weight": 0.30,
                 "degradation_direction": 1,
                 "correlation_with": {"inlet_temp": {"mu": 0.65, "sigma": 0.05}},
             },
@@ -177,7 +187,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 0.04,
                 "warning_threshold": 1.4,
                 "critical_threshold": 1.8,
-                "degradation_weight": 0.35,
+                "degradation_weight": 0.30,
                 "degradation_direction": 1,
                 "fouling_growth_model": "exponential",
             },
@@ -187,7 +197,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 0.4,
                 "warning_threshold": 9.0,
                 "critical_threshold": 7.0,
-                "degradation_weight": 0.15,
+                "degradation_weight": 0.05,
                 "degradation_direction": -1,
             },
             "fouling_index": {
@@ -196,7 +206,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 0.01,
                 "warning_threshold": 0.35,
                 "critical_threshold": 0.55,
-                "degradation_weight": 0.10,
+                "degradation_weight": 0.30,
                 "degradation_direction": 1,
             },
         },
@@ -209,7 +219,7 @@ MACHINE_CONFIGS = {
         "has_bearings": True,
         "pulley_ratio": 1.65,
         "standard": "ISO 5048, CEMA 7th Ed.",
-        "failure_mode": "Thermal stress, belt tension change, motor load increase",
+        "failure_mode": "Bearing fatigue — drive-end vibration and thermal rise (ISO 281 L10)",
         "weibull": {
             # Source: CEMA 7th Ed., belt conveyor drive reliability
             # Base eta = 540h, scaled 0.2x for demo visibility
@@ -221,13 +231,16 @@ MACHINE_CONFIGS = {
         },
         "cwru_calibration": None,
         "sensors": {
+            # CM-203 target fault: BEARING_FAULT
+            # Dominant sensors: vibration_rms + drive_temp, matching the CM BEARING_FAULT
+            # rule. belt_tension is reduced so it does not dominate the BELT_SLIP pattern.
             "belt_tension": {
                 "unit": "kN",
                 "nominal_mu": 8.2,
                 "nominal_sigma": 0.25,
                 "warning_threshold": 11.5,
                 "critical_threshold": 13.8,
-                "degradation_weight": 0.30,
+                "degradation_weight": 0.10,
                 "degradation_direction": 1,
             },
             "drive_temp": {
@@ -236,7 +249,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 2.5,
                 "warning_threshold": 78.0,
                 "critical_threshold": 92.0,
-                "degradation_weight": 0.25,
+                "degradation_weight": 0.35,
                 "degradation_direction": 1,
                 "thermal_model": "square_law",
                 "k_nominal": 0.0015,
@@ -248,7 +261,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 3.0,
                 "warning_threshold": 88.0,
                 "critical_threshold": 96.0,
-                "degradation_weight": 0.20,
+                "degradation_weight": 0.10,
                 "degradation_direction": 1,
             },
             "speed_rpm": {
@@ -257,7 +270,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 7.5,
                 "warning_threshold": 1380.0,
                 "critical_threshold": None,
-                "degradation_weight": 0.15,
+                "degradation_weight": 0.10,
                 "degradation_direction": -1,
             },
             "vibration_rms": {
@@ -266,7 +279,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 0.15,
                 "warning_threshold": 3.5,
                 "critical_threshold": 5.0,
-                "degradation_weight": 0.10,
+                "degradation_weight": 0.35,
                 "degradation_direction": 1,
             },
         },
@@ -280,7 +293,7 @@ MACHINE_CONFIGS = {
         "has_bearings": True,
         "pulley_ratio": None,
         "standard": "ISO 10816, API 619",
-        "failure_mode": "Bearing fatigue, oil degradation",
+        "failure_mode": "Valve seat leak — internal recirculation and outlet pressure loss (API 619)",
         "weibull": {
             # Source: IEEE 493, newer equipment adjustment +10%
             # Base eta = 680h, scaled 0.2x for demo visibility
@@ -296,13 +309,18 @@ MACHINE_CONFIGS = {
             "usage": "Same calibration base as AC-201, slightly different beta/eta",
         },
         "sensors": {
+            # AC-301 target fault: VALVE_LEAK
+            # Dominant sensors: outlet_pressure (drops) + motor_current (rises as
+            # compressor compensates for recirculation), matching the VALVE_LEAK rule.
+            # vibration_rms and bearing_temp are kept low to avoid BEARING_FAULT
+            # or MOTOR_OVERLOAD cross-fire.
             "vibration_rms": {
                 "unit": "mm/s",
                 "nominal_mu": 2.5,
                 "nominal_sigma": 0.15,
                 "warning_threshold": 4.5,
                 "critical_threshold": 7.1,
-                "degradation_weight": 0.35,
+                "degradation_weight": 0.05,
                 "degradation_direction": 1,
                 "fft": {
                     "BPFO_coeff": 0.4,
@@ -318,7 +336,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 2.0,
                 "warning_threshold": 85.0,
                 "critical_threshold": 105.0,
-                "degradation_weight": 0.30,
+                "degradation_weight": 0.10,
                 "degradation_direction": 1,
                 "correlation_with": {"vibration_rms": {"mu": 0.75, "sigma": 0.05}},
             },
@@ -328,7 +346,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 0.15,
                 "warning_threshold": 2.8,
                 "critical_threshold": 2.0,
-                "degradation_weight": 0.20,
+                "degradation_weight": 0.10,
                 "degradation_direction": -1,
             },
             "motor_current": {
@@ -337,7 +355,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 0.6,
                 "warning_threshold": 28.0,
                 "critical_threshold": 34.0,
-                "degradation_weight": 0.10,
+                "degradation_weight": 0.35,
                 "degradation_direction": 1,
                 "correlation_with": {"vibration_rms": {"mu": 0.70, "sigma": 0.05}},
             },
@@ -347,7 +365,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 0.15,
                 "warning_threshold": 6.5,
                 "critical_threshold": 5.0,
-                "degradation_weight": 0.05,
+                "degradation_weight": 0.40,
                 "degradation_direction": -1,
                 "downstream_effect": {
                     "target_machine": "HX-302",
@@ -371,7 +389,7 @@ MACHINE_CONFIGS = {
         "has_bearings": False,
         "pulley_ratio": None,
         "standard": "TEMA RGP-T-2.4",
-        "failure_mode": "Fouling, tube corrosion",
+        "failure_mode": "Flow restriction — tube-side blockage and progressive flow area loss (TEMA RGP-T-2.4)",
         "weibull": {
             # Source: TEMA, newer unit extended service factor
             # Base eta = 1020h, scaled 0.2x for demo visibility
@@ -383,6 +401,10 @@ MACHINE_CONFIGS = {
         },
         "cwru_calibration": None,
         "sensors": {
+            # HX-302 target fault: FLOW_RESTRICTION
+            # Dominant sensors: flow_rate (drops) + pressure_drop (rises), matching
+            # the FLOW_RESTRICTION rule. fouling_index is kept minimal to avoid
+            # cross-firing with the FOULING rule.
             "inlet_temp": {
                 "unit": "°C",
                 "nominal_mu": 145.0,
@@ -390,7 +412,7 @@ MACHINE_CONFIGS = {
                 "nominal_range": [130, 160],
                 "warning_threshold": None,
                 "critical_threshold": None,
-                "degradation_weight": 0.15,
+                "degradation_weight": 0.05,
                 "degradation_direction": 1,
                 "upstream_sensitivity": {
                     "source_machine": "AC-301",
@@ -405,7 +427,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 2.0,
                 "warning_threshold": 95.0,
                 "critical_threshold": None,
-                "degradation_weight": 0.25,
+                "degradation_weight": 0.10,
                 "degradation_direction": 1,
                 "correlation_with": {"inlet_temp": {"mu": 0.65, "sigma": 0.05}},
             },
@@ -415,7 +437,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 0.04,
                 "warning_threshold": 1.4,
                 "critical_threshold": 1.8,
-                "degradation_weight": 0.35,
+                "degradation_weight": 0.40,
                 "degradation_direction": 1,
                 "fouling_growth_model": "exponential",
             },
@@ -425,7 +447,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 0.4,
                 "warning_threshold": 9.0,
                 "critical_threshold": 7.0,
-                "degradation_weight": 0.15,
+                "degradation_weight": 0.40,
                 "degradation_direction": -1,
             },
             "fouling_index": {
@@ -434,7 +456,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 0.01,
                 "warning_threshold": 0.35,
                 "critical_threshold": 0.55,
-                "degradation_weight": 0.10,
+                "degradation_weight": 0.05,
                 "degradation_direction": 1,
             },
         },
@@ -447,7 +469,7 @@ MACHINE_CONFIGS = {
         "has_bearings": True,
         "pulley_ratio": 1.65,
         "standard": "ISO 5048, CEMA 7th Ed.",
-        "failure_mode": "Thermal stress, belt tension, motor load",
+        "failure_mode": "Belt slip — progressive tension loss and speed deficit under high-duty load (CEMA 7th Ed.)",
         "weibull": {
             # Source: CEMA, higher duty cycle adjustment
             # Base eta = 600h, scaled 0.2x for demo visibility
@@ -458,6 +480,7 @@ MACHINE_CONFIGS = {
             "source": "CEMA, higher duty cycle adjustment (demo-scaled 0.2x)",
         },
         "cwru_calibration": None,
+        # CM-303 target fault: BELT_SLIP
         # When Line A fully stops, CM-303 takes extra load
         "cross_line_load_spike": {
             "trigger": "LINE_A_FULL_STOP",
@@ -468,13 +491,17 @@ MACHINE_CONFIGS = {
             "message": "Line B operating at ~140% conveyor load due to Line A failure",
         },
         "sensors": {
+            # CM-303 target fault: BELT_SLIP
+            # Dominant sensors: belt_tension (rises as tension becomes uneven) +
+            # speed_rpm (drops as slip increases), matching the BELT_SLIP rule.
+            # drive_temp and motor_load are reduced to avoid MOTOR_OVERLOAD cross-fire.
             "belt_tension": {
                 "unit": "kN",
                 "nominal_mu": 8.2,
                 "nominal_sigma": 0.25,
                 "warning_threshold": 11.5,
                 "critical_threshold": 13.8,
-                "degradation_weight": 0.30,
+                "degradation_weight": 0.45,
                 "degradation_direction": 1,
             },
             "drive_temp": {
@@ -483,7 +510,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 2.5,
                 "warning_threshold": 78.0,
                 "critical_threshold": 92.0,
-                "degradation_weight": 0.25,
+                "degradation_weight": 0.10,
                 "degradation_direction": 1,
                 "thermal_model": "square_law",
                 "k_nominal": 0.0015,
@@ -495,7 +522,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 3.0,
                 "warning_threshold": 88.0,
                 "critical_threshold": 96.0,
-                "degradation_weight": 0.20,
+                "degradation_weight": 0.10,
                 "degradation_direction": 1,
             },
             "speed_rpm": {
@@ -504,7 +531,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 7.5,
                 "warning_threshold": 1380.0,
                 "critical_threshold": None,
-                "degradation_weight": 0.15,
+                "degradation_weight": 0.30,
                 "degradation_direction": -1,
             },
             "vibration_rms": {
@@ -513,7 +540,7 @@ MACHINE_CONFIGS = {
                 "nominal_sigma": 0.15,
                 "warning_threshold": 3.5,
                 "critical_threshold": 5.0,
-                "degradation_weight": 0.10,
+                "degradation_weight": 0.05,
                 "degradation_direction": 1,
             },
         },

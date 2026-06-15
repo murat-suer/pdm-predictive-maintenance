@@ -55,14 +55,31 @@ BELT_SLIP = "BELT_SLIP"
 
 
 # AC Machine Fault Rules
-# Each rule defines sensor patterns and SHAP contributors for specific faults
+# Each rule defines sensor patterns and SHAP contributors for specific faults.
+#
+# ABSOLUTE THRESHOLDS are calibrated to mid-degradation levels (~40-60% of the
+# nominal→warning range) so that patterns match when IsolationForest first flags
+# an anomaly. The z-score path uses k_sigma=2.0 (instead of the former 4.0)
+# because anomaly detection fires at roughly 2σ deviation — requiring 4σ caused
+# systematic UNCLASSIFIED outcomes.
+#
+# CROSS-FIRE GUARD: each fault's key sensors must dominate only that fault.
+# - BEARING_FAULT keys on vibration_rms + bearing_temp (AC-201 dominant sensors).
+# - OIL_DEGRADATION keys on oil_pressure + bearing_temp (different bearing_temp
+#   threshold separates it from BEARING_FAULT).
+# - VALVE_LEAK keys on outlet_pressure + motor_current (AC-301 dominant sensors).
+# - MOTOR_OVERLOAD keys on motor_current + vibration_rms with higher absolute
+#   thresholds than VALVE_LEAK, preventing activation at moderate current rise.
 AC_FAULT_RULES = [
     {
         "fault_type": BEARING_FAULT,
         "description": {"key": "fault_ac_bearing_desc"},
         "sensor_patterns": {
-            "vibration_rms": {"min": 4.5, "weight": 0.35},
-            "bearing_temp": {"min": 85.0, "weight": 0.30},
+            # z-score path: fires when vibration is ≥2σ above healthy baseline.
+            # Absolute fallback: mid-degradation vibration ~3.5 mm/s (≈40% into
+            # nominal 2.5→7.1 range); bearing_temp ~72°C (≈30% into 62→105 range).
+            "vibration_rms": {"min": 3.5, "weight": 0.45, "k_sigma": 2.0},
+            "bearing_temp": {"min": 72.0, "weight": 0.35, "k_sigma": 2.0},
         },
         "shap_sensors": ["vibration_rms", "bearing_temp"],
         "base_confidence": 0.55,
@@ -71,8 +88,11 @@ AC_FAULT_RULES = [
         "fault_type": OIL_DEGRADATION,
         "description": {"key": "fault_ac_oil_desc"},
         "sensor_patterns": {
-            "oil_pressure": {"max": 2.8, "weight": 0.20},
-            "bearing_temp": {"min": 75.0, "weight": 0.30},
+            # oil_pressure absolute: ~3.5 bar (midway from 4.5→2.0 with dir=-1).
+            # bearing_temp at 78°C indicates heat from oil starvation (higher than
+            # BEARING_FAULT's 72°C threshold, separating the two rules).
+            "oil_pressure": {"max": 3.5, "weight": 0.20, "k_sigma": 2.0},
+            "bearing_temp": {"min": 78.0, "weight": 0.30, "k_sigma": 2.0},
         },
         "shap_sensors": ["oil_pressure", "bearing_temp"],
         "base_confidence": 0.50,
@@ -81,8 +101,10 @@ AC_FAULT_RULES = [
         "fault_type": VALVE_LEAK,
         "description": {"key": "fault_ac_valve_desc"},
         "sensor_patterns": {
-            "outlet_pressure": {"max": 6.5, "weight": 0.05},
-            "motor_current": {"min": 24.0, "weight": 0.10},
+            # outlet_pressure absolute: ~7.5 bar (≈25% degraded from 8.2 with
+            # dir=-1; warning is 6.5). motor_current ~23 A (≈25% into 21→28 range).
+            "outlet_pressure": {"max": 7.5, "weight": 0.40, "k_sigma": 2.0},
+            "motor_current": {"min": 23.0, "weight": 0.35, "k_sigma": 2.0},
         },
         "shap_sensors": ["outlet_pressure", "motor_current"],
         "base_confidence": 0.45,
@@ -91,8 +113,10 @@ AC_FAULT_RULES = [
         "fault_type": MOTOR_OVERLOAD,
         "description": {"key": "fault_ac_motor_desc"},
         "sensor_patterns": {
-            "motor_current": {"min": 28.0, "weight": 0.10},
-            "vibration_rms": {"min": 3.5, "weight": 0.35},
+            # Higher motor_current threshold (26A) than VALVE_LEAK (23A) prevents
+            # cross-fire; vibration elevated but not as dominant as BEARING_FAULT.
+            "motor_current": {"min": 26.0, "weight": 0.10, "k_sigma": 2.0},
+            "vibration_rms": {"min": 4.0, "weight": 0.35, "k_sigma": 2.0},
         },
         "shap_sensors": ["motor_current", "vibration_rms"],
         "base_confidence": 0.48,
@@ -101,14 +125,26 @@ AC_FAULT_RULES = [
 
 
 # HX Machine Fault Rules
+# FOULING: dominant sensors are fouling_index + outlet_temp + pressure_drop
+#   (HX-202 degradation profile).
+# FLOW_RESTRICTION: dominant sensors are flow_rate + pressure_drop
+#   (HX-302 degradation profile, no fouling_index).
+# Cross-fire guard: FOULING requires fouling_index ≥ 0.12 (2σ above nominal
+#   0.08 with σ=0.01), which HX-302 (low fouling_index weight) will not reach
+#   at anomaly time. FLOW_RESTRICTION requires flow_rate ≤ 11.5 (2σ below
+#   nominal 12.5 with σ=0.4), which HX-202 (low flow_rate weight) stays above.
 HX_FAULT_RULES = [
     {
         "fault_type": FOULING,
         "description": {"key": "fault_hx_fouling_desc"},
         "sensor_patterns": {
-            "fouling_index": {"min": 0.35, "weight": 0.10},
-            "pressure_drop": {"min": 1.4, "weight": 0.35},
-            "outlet_temp": {"min": 95.0, "weight": 0.25},
+            # fouling_index: 0.12 is just 4σ above nominal (0.08, σ=0.01); at
+            # early anomaly, HX-202 (weight 0.30) will have it at ~0.15+.
+            # pressure_drop: 1.05 bar is ~5σ above nominal (0.85, σ=0.04).
+            # outlet_temp: 84°C is ~3σ above nominal (78, σ=2.0).
+            "fouling_index": {"min": 0.12, "weight": 0.30, "k_sigma": 2.0},
+            "pressure_drop": {"min": 1.05, "weight": 0.30, "k_sigma": 2.0},
+            "outlet_temp": {"min": 84.0, "weight": 0.30, "k_sigma": 2.0},
         },
         "shap_sensors": ["fouling_index", "pressure_drop", "outlet_temp"],
         "base_confidence": 0.52,
@@ -117,8 +153,11 @@ HX_FAULT_RULES = [
         "fault_type": FLOW_RESTRICTION,
         "description": {"key": "fault_hx_flow_desc"},
         "sensor_patterns": {
-            "flow_rate": {"max": 9.0, "weight": 0.15},
-            "pressure_drop": {"min": 1.2, "weight": 0.35},
+            # flow_rate: 11.5 m³/h is ~2.5σ below nominal (12.5, σ=0.4).
+            # pressure_drop: 1.05 bar (same threshold as FOULING, but no
+            # fouling_index requirement → FLOW_RESTRICTION can score without it).
+            "flow_rate": {"max": 11.5, "weight": 0.40, "k_sigma": 2.0},
+            "pressure_drop": {"min": 1.05, "weight": 0.40, "k_sigma": 2.0},
         },
         "shap_sensors": ["flow_rate", "pressure_drop"],
         "base_confidence": 0.48,
@@ -127,13 +166,25 @@ HX_FAULT_RULES = [
 
 
 # CM Machine Fault Rules
+# BELT_SLIP: dominant sensors are belt_tension + speed_rpm (CM-303 profile).
+# MOTOR_OVERLOAD: dominant sensors are motor_load + drive_temp.
+# BEARING_FAULT: dominant sensors are vibration_rms + drive_temp (CM-203 profile).
+# Cross-fire guard:
+# - CM-203 (bearing profile) has high vibration_rms + drive_temp weight, low
+#   belt_tension weight → BELT_SLIP belt_tension threshold (10.0 kN) won't be
+#   reached because belt_tension degrades slowly on CM-203.
+# - CM-303 (belt-slip profile) has high belt_tension + speed_rpm weight, low
+#   vibration_rms weight → BEARING_FAULT vibration threshold (3.0 mm/s) won't be
+#   reached because vibration_rms degrades slowly on CM-303.
 CM_FAULT_RULES = [
     {
         "fault_type": BELT_SLIP,
         "description": {"key": "fault_cm_belt_desc"},
         "sensor_patterns": {
-            "belt_tension": {"min": 11.5, "weight": 0.30},
-            "speed_rpm": {"max": 1380.0, "weight": 0.15},
+            # belt_tension: 10.0 kN ≈ mid-degradation (nominal 8.2, warning 11.5).
+            # speed_rpm: 1420 RPM ≈ 4σ below nominal (1450, σ=7.5).
+            "belt_tension": {"min": 10.0, "weight": 0.45, "k_sigma": 2.0},
+            "speed_rpm": {"max": 1420.0, "weight": 0.30, "k_sigma": 2.0},
         },
         "shap_sensors": ["belt_tension", "speed_rpm"],
         "base_confidence": 0.50,
@@ -142,8 +193,10 @@ CM_FAULT_RULES = [
         "fault_type": MOTOR_OVERLOAD,
         "description": {"key": "fault_cm_motor_desc"},
         "sensor_patterns": {
-            "motor_load": {"min": 88.0, "weight": 0.20},
-            "drive_temp": {"min": 78.0, "weight": 0.25},
+            # motor_load: 80% ≈ 4σ above nominal (68, σ=3.0).
+            # drive_temp: 68°C ≈ mid-degradation (nominal 55, warning 78).
+            "motor_load": {"min": 80.0, "weight": 0.20, "k_sigma": 2.0},
+            "drive_temp": {"min": 68.0, "weight": 0.25, "k_sigma": 2.0},
         },
         "shap_sensors": ["motor_load", "drive_temp"],
         "base_confidence": 0.48,
@@ -152,8 +205,11 @@ CM_FAULT_RULES = [
         "fault_type": BEARING_FAULT,
         "description": {"key": "fault_cm_bearing_desc"},
         "sensor_patterns": {
-            "vibration_rms": {"min": 3.5, "weight": 0.10},
-            "drive_temp": {"min": 70.0, "weight": 0.25},
+            # vibration_rms: 3.0 mm/s ≈ mid-degradation (nominal 1.8, warning 3.5).
+            # drive_temp: 68°C same threshold as MOTOR_OVERLOAD, but BEARING_FAULT
+            # also requires elevated vibration, disambiguating from pure overload.
+            "vibration_rms": {"min": 3.0, "weight": 0.35, "k_sigma": 2.0},
+            "drive_temp": {"min": 68.0, "weight": 0.35, "k_sigma": 2.0},
         },
         "shap_sensors": ["vibration_rms", "drive_temp"],
         "base_confidence": 0.45,
