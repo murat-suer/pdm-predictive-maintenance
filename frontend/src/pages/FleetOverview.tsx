@@ -4,9 +4,19 @@ import Card from '../components/Card'
 import Badge from '../components/Badge'
 import Header from '../components/Header'
 import Sparkline from '../components/Sparkline'
+import DonutChart from '../components/charts/DonutChart'
+import MultiLineChart from '../components/charts/MultiLineChart'
+import type { LineSeriesData } from '../components/charts/MultiLineChart'
+import { PALETTE } from '../components/charts/palette'
 import { useApi, useLiveSnapshot } from '../api/hooks'
 import { useI18n, type TranslationKey } from '../i18n'
-import type { FleetSummary, HealthTrendPoint, MachineSummary, SavingsSummary } from '../api/types'
+import type {
+  FleetSummary,
+  HealthTrendPoint,
+  MachineSummary,
+  MhiHistoryResponse,
+  SavingsSummary,
+} from '../api/types'
 
 const statusColor: Record<string, string> = {
   normal: 'text-success',
@@ -24,6 +34,15 @@ const statusShape: Record<string, string> = {
   offline: '—',
 }
 
+// ISA-101: green/teal good, amber warning, red critical, blue maintenance, gray offline
+const STATUS_DONUT_COLORS: Record<string, string> = {
+  normal: PALETTE.GOOD,
+  warning: PALETTE.ALARM_P3,
+  critical: PALETTE.ALARM_P4,
+  maintenance: PALETTE.OBSERVE,
+  offline: PALETTE.TICK,
+}
+
 const machineTypes = ['All', 'Compressor', 'Heat Exchanger', 'Conveyor'] as const
 
 function formatUptime(seconds: number): string {
@@ -32,6 +51,51 @@ function formatUptime(seconds: number): string {
   if (days > 0) return `${days}d ${hours}h`
   const minutes = Math.floor((seconds % 3600) / 60)
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`
+}
+
+function fmtLabel(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+// Compact per-machine health bar strip — ISA-101 color bands
+function HealthBar({ id, score }: { id: string; score: number | null }) {
+  const pct = score != null ? Math.min(Math.max(score * 100, 0), 100) : null
+  const barColor =
+    pct == null ? PALETTE.TICK : pct < 55 ? PALETTE.ALARM_P4 : pct < 70 ? PALETTE.ALARM_P3 : PALETTE.GOOD
+
+  return (
+    <div className="flex items-center gap-2 min-w-0">
+      <span
+        className="text-[10px] font-mono text-text-secondary shrink-0 w-16 truncate"
+        title={id}
+      >
+        {id}
+      </span>
+      <div className="flex-1 relative h-3 bg-bg-secondary rounded-sm overflow-hidden border border-border-subtle">
+        {pct != null ? (
+          <div
+            className="absolute left-0 top-0 h-full rounded-sm transition-all duration-500"
+            style={{ width: `${pct}%`, backgroundColor: barColor, opacity: 0.75 }}
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="text-[9px] text-text-tertiary">—</span>
+          </div>
+        )}
+      </div>
+      <span
+        className="text-[10px] font-mono tabular-nums shrink-0 w-8 text-right"
+        style={{ color: barColor }}
+      >
+        {pct != null ? `${pct.toFixed(0)}%` : '—'}
+      </span>
+    </div>
+  )
 }
 
 export default function FleetOverview() {
@@ -44,6 +108,7 @@ export default function FleetOverview() {
   const summaryApi = useApi<FleetSummary>('/fleet/summary', 15000)
   const trendApi = useApi<HealthTrendPoint[]>('/fleet/health-trend?hours=24', 60000)
   const savingsApi = useApi<SavingsSummary>('/savings', 30000)
+  const mhiHistoryApi = useApi<MhiHistoryResponse>('/analytics/mhi-history?buckets=24', 60000)
   const { snapshot } = useLiveSnapshot()
 
   // Overlay live WebSocket snapshot onto the REST machine list.
@@ -77,6 +142,49 @@ export default function FleetOverview() {
 
   const summary = summaryApi.data
   const trend = trendApi.data ?? []
+
+  // ── Fleet status donut slices ──────────────────────────────────────────────
+  const donutSlices = useMemo(() => {
+    if (!summary) return []
+    const entries: { key: string; label: string; count: number }[] = [
+      { key: 'normal', label: t('status.normal'), count: summary.normal },
+      { key: 'warning', label: t('status.warning'), count: summary.warning },
+      { key: 'critical', label: t('status.critical'), count: summary.critical },
+      { key: 'maintenance', label: t('fleet.maintenance'), count: summary.maintenance },
+    ]
+    return entries
+      .filter((e) => e.count > 0)
+      .map((e) => ({
+        label: e.label,
+        value: e.count,
+        color: STATUS_DONUT_COLORS[e.key] ?? PALETTE.NEUTRAL,
+      }))
+  }, [summary, t])
+
+  // ── MHI multi-line chart data ──────────────────────────────────────────────
+  const mhiMachines = useMemo(
+    () => mhiHistoryApi.data?.machines ?? [],
+    [mhiHistoryApi.data],
+  )
+  const mhiAllTs = useMemo(
+    () =>
+      Array.from(new Set(mhiMachines.flatMap((m) => m.points.map((p) => p.t)))).sort(),
+    [mhiMachines],
+  )
+  const mhiLabels = mhiAllTs.map((ts) => fmtLabel(ts))
+  const mhiSeries: LineSeriesData[] = useMemo(
+    () =>
+      mhiMachines.map((machine, idx) => {
+        const byTime = new Map(machine.points.map((p) => [p.t, p.mhi]))
+        return {
+          id: machine.machine_id,
+          label: machine.machine_id,
+          values: mhiAllTs.map((ts) => byTime.get(ts) ?? NaN),
+          color: PALETTE.MACHINE_LINES[idx % PALETTE.MACHINE_LINES.length],
+        }
+      }),
+    [mhiMachines, mhiAllTs],
+  )
 
   if (machinesApi.error && machines.length === 0) {
     return (
@@ -174,7 +282,64 @@ export default function FleetOverview() {
         </Card>
       </div>
 
-      {/* Fleet Health Trend */}
+      {/* ── Visual band: Status Donut + MHI Trend ── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+        {/* Fleet status donut — HR-readable at a glance */}
+        <Card title={t('fleet.statusDist')} subtitle={t('fleet.statusDistSub')}>
+          {summaryApi.loading && !summary ? (
+            <div className="flex items-center justify-center h-40 text-text-tertiary text-xs">
+              {t('fleet.loading')}
+            </div>
+          ) : (
+            <DonutChart
+              slices={donutSlices}
+              ariaLabel={t('fleet.statusDist')}
+              height={160}
+              showLegend
+            />
+          )}
+        </Card>
+
+        {/* Per-machine MHI multi-line trend — 2/3 of the row */}
+        <Card
+          title={t('fleet.mhiTrend')}
+          subtitle={t('fleet.mhiTrendSub')}
+          className="md:col-span-2"
+        >
+          {mhiHistoryApi.loading && mhiSeries.length === 0 ? (
+            <div className="flex items-center justify-center h-40 text-text-tertiary text-xs">
+              {t('fleet.loading')}
+            </div>
+          ) : mhiSeries.length === 0 ? (
+            <p className="text-text-tertiary text-xs py-6 text-center">
+              {t('fleet.noHealthHistory')}
+            </p>
+          ) : (
+            <MultiLineChart
+              labels={mhiLabels}
+              series={mhiSeries}
+              ariaLabel={t('fleet.mhiTrend')}
+              height={160}
+              yMin={0}
+              yMax={100}
+              formatValue={(v) => v.toFixed(0)}
+            />
+          )}
+        </Card>
+      </div>
+
+      {/* ── Health Snapshot: compact per-machine bar strip ── */}
+      {machines.length > 0 && (
+        <Card title={t('fleet.healthSnapshot')} subtitle={t('fleet.healthSnapshotSub')} className="mb-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-6 gap-y-2 pt-1">
+            {machines.map((m) => (
+              <HealthBar key={m.id} id={m.id} score={m.health_score} />
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Fleet Health Trend (aggregate legacy bar — kept for the aggregate MHI view) */}
       <Card title={t('fleet.healthTrend')} subtitle={t('fleet.healthTrendSub')} className="mb-4">
         {trend.length === 0 ? (
           <p className="text-text-tertiary text-xs py-6 text-center">{t('fleet.noHealthHistory')}</p>

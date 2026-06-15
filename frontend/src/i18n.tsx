@@ -60,6 +60,12 @@ const en = {
   'fleet.backendUnreachable': 'Backend unreachable:',
   'fleet.checkApi': 'Check that the API service is running, then retry.',
   'fleet.openMachine': 'Open machine page',
+  'fleet.statusDist': 'Fleet Status',
+  'fleet.statusDistSub': 'Machine count by current state',
+  'fleet.mhiTrend': 'MHI Trend — Per Machine (24 h)',
+  'fleet.mhiTrendSub': 'Machine Health Index per machine over the last 24 h (0–100)',
+  'fleet.healthSnapshot': 'Health Snapshot',
+  'fleet.healthSnapshotSub': 'Current health score per machine — red <55, amber <70, teal ≥70',
 
   // Status labels
   'status.normal': 'Normal',
@@ -376,6 +382,12 @@ const tr: Record<TranslationKey, string> = {
   'fleet.backendUnreachable': 'Sunucuya ulaşılamıyor:',
   'fleet.checkApi': 'API servisinin çalıştığını kontrol edip yeniden deneyin.',
   'fleet.openMachine': 'Makine sayfasını aç',
+  'fleet.statusDist': 'Filo Durumu',
+  'fleet.statusDistSub': 'Mevcut duruma göre makine sayısı',
+  'fleet.mhiTrend': 'MHI Trendi — Makine Başına (24 sa)',
+  'fleet.mhiTrendSub': 'Son 24 saatte makine başına Sağlık Endeksi (0–100)',
+  'fleet.healthSnapshot': 'Sağlık Anlık Görüntüsü',
+  'fleet.healthSnapshotSub': 'Makine başına güncel sağlık skoru — kırmızı <55, amber <70, teal ≥70',
 
   'status.normal': 'Normal',
   'status.warning': 'Uyarı',
@@ -682,6 +694,12 @@ const de: Record<TranslationKey, string> = {
   'fleet.backendUnreachable': 'Backend nicht erreichbar:',
   'fleet.checkApi': 'Prüfen Sie, ob der API-Dienst läuft, und versuchen Sie es erneut.',
   'fleet.openMachine': 'Maschinenseite öffnen',
+  'fleet.statusDist': 'Flottenstatus',
+  'fleet.statusDistSub': 'Maschinenanzahl nach aktuellem Zustand',
+  'fleet.mhiTrend': 'MHI-Trend — je Maschine (24 Std.)',
+  'fleet.mhiTrendSub': 'Maschinengesundheitsindex je Maschine über 24 Std. (0–100)',
+  'fleet.healthSnapshot': 'Gesundheits-Snapshot',
+  'fleet.healthSnapshotSub': 'Aktueller Gesundheitswert je Maschine — rot <55, amber <70, teal ≥70',
 
   'status.normal': 'Normal',
   'status.warning': 'Warnung',
