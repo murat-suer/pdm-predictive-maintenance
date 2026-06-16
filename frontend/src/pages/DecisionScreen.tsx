@@ -17,7 +17,7 @@ import { axisDefaults, tooltipDefaults, PALETTE } from '../components/charts/pal
 import { apiPost } from '../api/client'
 import { useApi } from '../api/hooks'
 import { useI18n, type TranslationKey } from '../i18n'
-import type { DecisionResolveResult, DecisionScenario, PendingDecision } from '../api/types'
+import type { DecisionResolveResult, DecisionScenario, MachineTimeline, PendingDecision } from '../api/types'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend)
 
@@ -245,6 +245,76 @@ function SensorBar({ label, value, max, color }: { label: string; value: number;
   )
 }
 
+// ---------------------------------------------------------------------------
+// Escalation position indicator
+// Shows the current OBSERVE streak out of the 2-step limit, and the next step.
+// ---------------------------------------------------------------------------
+const OBSERVE_LIMIT = 2
+
+function computeObserveStreak(events: MachineTimeline['events']): number {
+  let streak = 0
+  for (const ev of events) {
+    if (ev.recommendation === 'OBSERVE') {
+      streak++
+    } else {
+      break
+    }
+  }
+  return streak
+}
+
+function isIdentifiedFault(faultType: string | null | undefined): boolean {
+  if (!faultType) return false
+  const upper = faultType.toUpperCase()
+  return upper !== 'UNCLASSIFIED_ANOMALY' && upper !== 'UNKNOWN'
+}
+
+interface ObserveStreakIndicatorProps {
+  aiRecommendation: string | null
+  faultType: string | null | undefined
+  timeline: MachineTimeline | null
+}
+
+function ObserveStreakIndicator({ aiRecommendation, faultType, timeline }: ObserveStreakIndicatorProps) {
+  const { t } = useI18n()
+
+  // Only render when the current recommendation is OBSERVE or we have streak data showing OBSERVE history
+  if (!aiRecommendation) return null
+
+  const events = timeline?.events ?? []
+  const streak = computeObserveStreak(events)
+  const identified = isIdentifiedFault(faultType)
+  const nextLabel = identified ? t('decision.nextStepPlanned') : t('decision.nextStepDispatch')
+
+  if (aiRecommendation !== 'OBSERVE') {
+    // Already escalated — show what step was reached
+    return (
+      <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-alarm-p3/10 border border-alarm-p3/30 text-alarm-p3 text-[11px] font-medium">
+        <span aria-hidden="true">▲</span>
+        <span>{t('decision.escalatedTo', { next: t(`scenario.label.${aiRecommendation}` as Parameters<typeof t>[0]) })}</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-alarm-p3/10 border border-alarm-p3/30 text-[11px]">
+      <span aria-hidden="true" className="text-alarm-p3 font-bold">▲</span>
+      <span className="text-text-secondary font-medium">
+        {t('decision.observeStreak', { streak, limit: OBSERVE_LIMIT, next: nextLabel })}
+      </span>
+      {/* Pip indicators: filled = consumed watch, empty = remaining */}
+      <div className="flex items-center gap-1 ml-1" aria-hidden="true">
+        {Array.from({ length: OBSERVE_LIMIT }, (_, i) => (
+          <span
+            key={i}
+            className={`inline-block w-2 h-2 rounded-sm ${i < streak ? 'bg-alarm-p3' : 'bg-alarm-p3/25 border border-alarm-p3/40'}`}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function useCountdown(dueAt: string | null): number {
   const [remaining, setRemaining] = useState(0)
   useEffect(() => {
@@ -365,6 +435,14 @@ export default function DecisionScreen() {
 
   const decision = pendingApi.data?.[0] ?? null
   const remainingSeconds = useCountdown(decision?.due_at ?? null)
+
+  // Timeline for the current pending decision's machine — drives the escalation indicator.
+  // When there is no decision, machine_id is '' which results in a 404; the error is
+  // swallowed silently and machineTimeline stays null — safe for the empty-state branch.
+  const timelineApi = useApi<MachineTimeline>(
+    decision ? `/machines/${decision.machine_id}/timeline` : '',
+  )
+  const machineTimeline = timelineApi.data
 
   // SHAP values → top sensor contribution bars (normalized to the max |value|).
   const shapEntries = decision?.shap_values
@@ -598,6 +676,14 @@ export default function DecisionScreen() {
                   />
                 </div>
               )}
+            </div>
+            {/* Escalation position indicator — only meaningful for OBSERVE recommendations */}
+            <div className="mt-2">
+              <ObserveStreakIndicator
+                aiRecommendation={decision.ai_recommendation}
+                faultType={decision.fault_type}
+                timeline={machineTimeline}
+              />
             </div>
           </Card>
         )
