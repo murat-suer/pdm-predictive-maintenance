@@ -88,12 +88,19 @@ class TestApplyObserveEscalation:
         assert DISPATCH_SCENARIO in ids
         assert rec == DISPATCH_SCENARIO
 
-    def test_observe_dropped_identified_falls_back_to_expected_cost(self):
+    def test_observe_dropped_identified_recommends_planned(self):
+        # An identified fault watched to the limit is already diagnosed —
+        # schedule the repair (PLANNED) rather than dispatch a technician to
+        # re-diagnose what we already know.
         scenarios, rec = apply_observe_escalation(make_scenarios(), "OBSERVE", 3, True)
         assert "OBSERVE" not in [s["scenario"] for s in scenarios]
-        # identified fault: no forced dispatch — cheapest remaining expected cost
-        assert rec == DISPATCH_SCENARIO or rec == "PLANNED"
-        # dispatch expected cost = 150 + observe risk term (850) = 1000 < 3010
+        assert rec == "PLANNED"
+
+    def test_observe_dropped_unidentified_recommends_dispatch(self):
+        # Still unidentified after three watches → send a technician to find
+        # out what it is (dispatch), not schedule a blind overhaul.
+        scenarios, rec = apply_observe_escalation(make_scenarios(), "OBSERVE", 3, False)
+        assert "OBSERVE" not in [s["scenario"] for s in scenarios]
         assert rec == DISPATCH_SCENARIO
 
     def test_exactly_one_recommended_flag(self):

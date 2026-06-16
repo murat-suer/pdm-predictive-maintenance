@@ -90,7 +90,14 @@ def apply_observe_escalation(
     if streak >= OBSERVE_MAX_STREAK and observe is not None:
         scenarios = [s for s in scenarios if s.get("scenario") != "OBSERVE"]
         if recommendation == "OBSERVE":
-            recommendation = None
+            # A fault watched this many times should escalate. If it is already
+            # IDENTIFIED, we know what it is — schedule the repair (PLANNED)
+            # rather than send a technician to re-diagnose it; dispatch is for
+            # the unidentified case, handled below (recommendation stays None).
+            planned = next(
+                (s for s in scenarios if s.get("scenario") == "PLANNED"), None
+            )
+            recommendation = "PLANNED" if (identified and planned is not None) else None
 
     if streak >= OBSERVE_DISPATCH_AFTER:
         # The inspection carries the same residual failure risk as watching —
