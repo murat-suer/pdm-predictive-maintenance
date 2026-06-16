@@ -88,7 +88,9 @@ function HealthBar({
   // shows the health magnitude; its COLOUR follows the machine's status tier
   // (the recommendation), so a low-MHI machine the engine still rates Normal
   // stays green instead of alarming red.
-  const barColor = pct == null ? PALETTE.TICK : (STATUS_COLOR[status] ?? PALETTE.GOOD)
+  // Use the hex palette (STATUS_DONUT_COLORS), not the Tailwind class map
+  // (STATUS_COLOR) — this value is an inline backgroundColor.
+  const barColor = pct == null ? PALETTE.TICK : (STATUS_DONUT_COLORS[status] ?? PALETTE.GOOD)
   const rulDisplay = rul == null ? '—' : rul < 1 ? '<1' : rul.toFixed(0)
 
   return (
