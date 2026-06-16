@@ -390,39 +390,83 @@ export default function DecisionScreen() {
         </div>
       </Card>
 
-      {/* Active Alarm Banner */}
-      <Card className="mb-3 border-alarm-p4/50">
-        <div className="flex items-center gap-3 min-h-14">
-          <div className="w-10 h-10 rounded-full bg-alarm-p4/20 border border-alarm-p4/40 flex items-center justify-center shrink-0">
-            <span className="text-alarm-p4 font-bold text-lg">!</span>
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-alarm-p4 text-sm font-semibold">
-                {decision.severity ?? 'ALARM'} — {(decision.fault_type ?? 'Anomaly detected').replace(/_/g, ' ')}
-              </span>
-              <Badge variant="p4" label={t('decision.pending')} />
+      {/* Active Alarm Banner — tier aligned to AI recommendation (ISA-101) */}
+      {(() => {
+        // Align banner tier to the recommended scenario, not raw severity
+        const rec = decision.ai_recommendation ?? ''
+        const isShutdownOrReduce = rec === 'SHUTDOWN' || rec === 'REDUCE_LOAD'
+        const isObserveOrDispatch = rec === 'OBSERVE' || rec === 'DISPATCH_TECHNICIAN'
+        const tierColor = isShutdownOrReduce
+          ? 'text-alarm-p4'
+          : isObserveOrDispatch
+            ? 'text-alarm-p3'
+            : 'text-[#fb923c]'  // PLANNED → action/orange
+        const tierBorder = isShutdownOrReduce
+          ? 'border-alarm-p4/50'
+          : isObserveOrDispatch
+            ? 'border-alarm-p3/50'
+            : 'border-[#fb923c]/50'
+        const tierBg = isShutdownOrReduce
+          ? 'bg-alarm-p4/20 border-alarm-p4/40'
+          : isObserveOrDispatch
+            ? 'bg-alarm-p3/20 border-alarm-p3/40'
+            : 'bg-[#fb923c]/20 border-[#fb923c]/40'
+        const tierShape = isShutdownOrReduce ? '■' : isObserveOrDispatch ? '▲' : '◆'
+        const tierBadgeVariant: 'p4' | 'p3' | 'warning' = isShutdownOrReduce ? 'p4' : isObserveOrDispatch ? 'p3' : 'warning'
+        const tierLabel = isShutdownOrReduce
+          ? t('status.critical')
+          : isObserveOrDispatch
+            ? t('status.watch')
+            : t('status.action')
+
+        return (
+          <Card className={`mb-3 ${tierBorder}`}>
+            <div className="flex items-start gap-3 min-h-14">
+              <div className={`w-10 h-10 rounded-full ${tierBg} border flex items-center justify-center shrink-0 mt-0.5`}>
+                <span className={`${tierColor} font-bold text-lg`} aria-hidden="true">{tierShape}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                {/* Machine ID prominently */}
+                <p className="text-text-secondary text-xs mb-0.5">
+                  {t('decision.machine')}{' '}
+                  <Link
+                    to={`/machines/${decision.machine_id}`}
+                    className="text-alarm-p0 font-semibold text-sm hover:underline"
+                  >
+                    {decision.machine_id} ↗
+                  </Link>
+                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Tier shape + label + fault */}
+                  <span className={`${tierColor} text-sm font-semibold flex items-center gap-1`}>
+                    <span aria-hidden="true">{tierShape}</span>
+                    <span>{tierLabel}</span>
+                    {decision.fault_type && (
+                      <span className="text-text-secondary font-normal">
+                        {' '}— {decision.fault_type.replace(/_/g, ' ')}
+                      </span>
+                    )}
+                  </span>
+                  <Badge variant={tierBadgeVariant} label={t('decision.pending')} />
+                </div>
+                <p className="text-text-tertiary text-[11px] mt-0.5">
+                  {decision.rul_hours != null && `RUL: ${decision.rul_hours.toFixed(0)} h`}
+                  {decision.anomaly_score != null && ` · ${t('decision.anomalyScore')}: ${decision.anomaly_score.toFixed(2)}`}
+                </p>
+              </div>
+              {decision.ai_recommendation && (
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <span className="text-[11px] text-text-tertiary">{t('decision.aiRecommends')}</span>
+                  <Badge
+                    variant={tierBadgeVariant}
+                    label={t(`scenario.${decision.ai_recommendation}` as TranslationKey)}
+                  />
+                </div>
+              )}
             </div>
-            <p className="text-text-secondary text-xs mt-0.5">
-              {t('decision.machine')}{' '}
-              <Link
-                to={`/machines/${decision.machine_id}`}
-                className="text-alarm-p0 font-medium hover:underline"
-              >
-                {decision.machine_id} ↗
-              </Link>
-              {decision.rul_hours != null && ` · RUL: ${decision.rul_hours.toFixed(0)} h`}
-              {decision.anomaly_score != null && ` · Anomaly score: ${decision.anomaly_score.toFixed(2)}`}
-            </p>
-          </div>
-          {decision.ai_recommendation && (
-            <div className="ml-auto flex items-center gap-2">
-              <span className="text-[11px] text-text-tertiary">{t('decision.aiRecommends')}</span>
-              <Badge variant="p3" label={decision.ai_recommendation.replace(/_/g, ' ')} />
-            </div>
-          )}
-        </div>
-      </Card>
+          </Card>
+        )
+      })()}
 
       {submitError && (
         <Card className="mb-3 border-alarm-p4/50">
@@ -471,6 +515,7 @@ export default function DecisionScreen() {
             const locked = !canExecute(sessionRole, opt.scenario)
             const minRoleKey = `rbac.role.${SCENARIO_MIN_ROLE[opt.scenario] ?? 'PLANT_MANAGER'}` as TranslationKey
 
+            const scenarioLabelKey = `scenario.label.${opt.scenario}` as TranslationKey
             return (
               <button
                 key={opt.scenario}
@@ -491,7 +536,7 @@ export default function DecisionScreen() {
                       opt.scenario === 'SHUTDOWN' ? 'text-alarm-p4' : 'text-text-primary'
                     }`}
                   >
-                    {opt.scenario.replace(/_/g, ' ')}
+                    {t(scenarioLabelKey)}
                   </span>
                   {isRecommended && <Badge variant="warning" label={t('decision.recommended')} />}
                 </div>
@@ -560,8 +605,8 @@ export default function DecisionScreen() {
             {submitting
               ? t('decision.executing')
               : canExecute(sessionRole, selectedScenario)
-                ? `${t('decision.execute')} ${selectedScenario.replace(/_/g, ' ')}`
-                : `🔒 ${t('rbac.elevateAndExecute')} ${selectedScenario.replace(/_/g, ' ')}`}
+                ? `${t('decision.execute')} ${t(`scenario.label.${selectedScenario}` as TranslationKey)}`
+                : `🔒 ${t('rbac.elevateAndExecute')} — ${t(`scenario.label.${selectedScenario}` as TranslationKey)}`}
           </Button>
         </div>
       )}

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Card from '../components/Card'
 import Badge from '../components/Badge'
+import Button from '../components/Button'
 import Header from '../components/Header'
 import Sparkline from '../components/Sparkline'
 import DonutChart from '../components/charts/DonutChart'
@@ -15,7 +16,6 @@ import type {
   HealthTrendPoint,
   MachineSummary,
   MhiHistoryResponse,
-  SavingsSummary,
 } from '../api/types'
 
 // ── ISA-101 redundant coding: color + shape + label per tier ────────────────
@@ -59,14 +59,6 @@ const STATUS_LEGEND_SHAPE: Record<string, string> = STATUS_SHAPE
 
 const machineTypes = ['All', 'Compressor', 'Heat Exchanger', 'Conveyor'] as const
 
-function formatUptime(seconds: number): string {
-  const days = Math.floor(seconds / 86400)
-  const hours = Math.floor((seconds % 86400) / 3600)
-  if (days > 0) return `${days}d ${hours}h`
-  const minutes = Math.floor((seconds % 3600) / 60)
-  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`
-}
-
 function fmtLabel(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
     month: 'short',
@@ -76,23 +68,36 @@ function fmtLabel(iso: string): string {
   })
 }
 
-// Compact per-machine health bar strip — ISA-101 color bands + link to detail
-function HealthBar({ id, score }: { id: string; score: number | null }) {
+// Compact per-machine health block — health bar + health%, RUL, status badge, button (ISA-101)
+function HealthBar({
+  id,
+  score,
+  rul,
+  status,
+  navigate,
+}: {
+  id: string
+  score: number | null
+  rul: number | null
+  status: string
+  navigate: ReturnType<typeof useNavigate>
+}) {
   const { t } = useI18n()
   const pct = score != null ? Math.min(Math.max(score * 100, 0), 100) : null
   const barColor =
     pct == null ? PALETTE.TICK : pct < 55 ? PALETTE.ALARM_P4 : pct < 70 ? PALETTE.ALARM_P3 : PALETTE.GOOD
+  const rulDisplay = rul == null ? '—' : rul < 1 ? '<1' : rul.toFixed(0)
 
   return (
-    <div className="flex flex-col gap-0.5 min-w-0">
-      <div className="flex items-center gap-2 min-w-0">
-        <span
-          className="text-[10px] font-mono text-text-secondary shrink-0 w-16 truncate"
-          title={id}
-        >
-          {id}
-        </span>
-        <div className="flex-1 relative h-3 bg-bg-secondary rounded-sm overflow-hidden border border-border-subtle">
+    <div className="flex flex-col gap-1 min-w-0">
+      {/* Machine ID */}
+      <span className="text-[10px] font-mono text-text-secondary truncate" title={id}>
+        {id}
+      </span>
+
+      {/* Health bar + % */}
+      <div className="flex items-center gap-1.5 min-w-0">
+        <div className="flex-1 relative h-2.5 bg-bg-secondary rounded-sm overflow-hidden border border-border-subtle">
           {pct != null ? (
             <div
               className="absolute left-0 top-0 h-full rounded-sm transition-all duration-500"
@@ -100,25 +105,39 @@ function HealthBar({ id, score }: { id: string; score: number | null }) {
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-[9px] text-text-tertiary">—</span>
+              <span className="text-[8px] text-text-tertiary">—</span>
             </div>
           )}
         </div>
         <span
-          className="text-[10px] font-mono tabular-nums shrink-0 w-8 text-right"
+          className="text-[10px] font-mono tabular-nums shrink-0 w-7 text-right"
           style={{ color: barColor }}
         >
           {pct != null ? `${pct.toFixed(0)}%` : '—'}
         </span>
       </div>
-      {/* Task 5: Link to machine detail page under each bar */}
-      <Link
-        to={`/machines/${id}`}
-        className="text-[9px] text-alarm-p0 hover:underline ml-0 self-start"
+
+      {/* RUL + status badge */}
+      <div className="flex items-center justify-between gap-1">
+        <span className="text-[10px] text-text-tertiary">
+          RUL: <span className="font-mono text-text-secondary">{rulDisplay} h</span>
+        </span>
+        <span className={`text-[10px] font-medium ${STATUS_COLOR[status] ?? 'text-text-tertiary'} flex items-center gap-0.5 shrink-0`}>
+          <span aria-hidden="true">{STATUS_SHAPE[status] ?? '○'}</span>
+          <span>{t(`status.${status}` as TranslationKey)}</span>
+        </span>
+      </div>
+
+      {/* Navigate button */}
+      <Button
+        variant="secondary"
+        size="sm"
+        className="w-full text-[10px] px-2 py-0.5 min-h-0 h-6"
+        onClick={() => navigate(`/machines/${id}`)}
         title={t('fleet.openMachine')}
       >
         {t('fleet.openMachineLink')} ↗
-      </Link>
+      </Button>
     </div>
   )
 }
@@ -127,12 +146,11 @@ export default function FleetOverview() {
   const [filter, setFilter] = useState<'All' | 'Alert' | 'Normal'>('All')
   const [typeFilter, setTypeFilter] = useState<string>('All')
   const navigate = useNavigate()
-  const { t, lang } = useI18n()
+  const { t } = useI18n()
 
   const machinesApi = useApi<MachineSummary[]>('/machines', 15000)
   const summaryApi = useApi<FleetSummary>('/fleet/summary', 15000)
   const trendApi = useApi<HealthTrendPoint[]>('/fleet/health-trend?hours=24', 60000)
-  const savingsApi = useApi<SavingsSummary>('/savings', 30000)
   const mhiHistoryApi = useApi<MhiHistoryResponse>('/analytics/mhi-history?buckets=24', 60000)
   const { snapshot } = useLiveSnapshot()
 
@@ -236,10 +254,10 @@ export default function FleetOverview() {
     <div className="p-4">
       <Header title={t('fleet.title')} />
 
-      {/* Task 1: 6 KPI cards — Online · Normal · Warning · Critical · Maintenance · Savings */}
+      {/* 6 KPI tier cards — Online · Normal · Dikkat · Uyarı · Kritik · Bakımda (ISA-101: shape+colour+text) */}
       <div className="flex flex-wrap gap-3 mb-4">
-        {/* Online = total − offline */}
-        <Card className="min-w-[120px] flex-1">
+        {/* Çevrimiçi — total − offline, no per-machine tier colour (it's a count) */}
+        <Card className="min-w-[110px] flex-1">
           <div className="flex flex-col">
             <span className="text-text-tertiary text-[11px] uppercase tracking-wider">
               {t('fleet.online')}
@@ -249,79 +267,64 @@ export default function FleetOverview() {
             </span>
           </div>
         </Card>
-        {/* Normal = summary.normal */}
-        <Card className="min-w-[120px] flex-1">
+        {/* Normal ● */}
+        <Card className="min-w-[110px] flex-1">
           <div className="flex flex-col">
-            <span className="text-text-tertiary text-[11px] uppercase tracking-wider">
-              {t('fleet.normal')}
+            <span className="text-success text-[11px] uppercase tracking-wider flex items-center gap-1">
+              <span aria-hidden="true">{STATUS_SHAPE.normal}</span>
+              {t('status.normal')}
             </span>
             <span className="text-success text-2xl font-semibold font-mono">
               {summary ? summary.normal : '—'}
             </span>
           </div>
         </Card>
-        {/* Warning = watch + action (or summary.warning) */}
-        <Card className="min-w-[120px] flex-1">
+        {/* Watch ▲ */}
+        <Card className="min-w-[110px] flex-1">
           <div className="flex flex-col">
-            <span className="text-text-tertiary text-[11px] uppercase tracking-wider">
-              {t('fleet.warning')}
+            <span className="text-alarm-p3 text-[11px] uppercase tracking-wider flex items-center gap-1">
+              <span aria-hidden="true">{STATUS_SHAPE.watch}</span>
+              {t('status.watch')}
             </span>
             <span className="text-alarm-p3 text-2xl font-semibold font-mono">
-              {summary
-                ? (summary.warning ?? ((summary.watch ?? 0) + (summary.action ?? 0)))
-                : '—'}
+              {summary ? (summary.watch ?? 0) : '—'}
             </span>
           </div>
         </Card>
-        {/* Critical */}
-        <Card className="min-w-[120px] flex-1">
+        {/* Action ◆ */}
+        <Card className="min-w-[110px] flex-1">
           <div className="flex flex-col">
-            <span className="text-text-tertiary text-[11px] uppercase tracking-wider">
-              {t('fleet.critical')}
+            <span className="text-[11px] uppercase tracking-wider flex items-center gap-1" style={{ color: STATUS_DONUT_COLORS.action }}>
+              <span aria-hidden="true">{STATUS_SHAPE.action}</span>
+              {t('status.action')}
+            </span>
+            <span className="text-2xl font-semibold font-mono" style={{ color: STATUS_DONUT_COLORS.action }}>
+              {summary ? (summary.action ?? 0) : '—'}
+            </span>
+          </div>
+        </Card>
+        {/* Critical ■ */}
+        <Card className="min-w-[110px] flex-1">
+          <div className="flex flex-col">
+            <span className="text-alarm-p4 text-[11px] uppercase tracking-wider flex items-center gap-1">
+              <span aria-hidden="true">{STATUS_SHAPE.critical}</span>
+              {t('status.critical')}
             </span>
             <span className="text-alarm-p4 text-2xl font-semibold font-mono">
               {summary ? summary.critical : '—'}
             </span>
           </div>
         </Card>
-        {/* Maintenance */}
-        <Card className="min-w-[120px] flex-1">
+        {/* Maintenance ▣ */}
+        <Card className="min-w-[110px] flex-1">
           <div className="flex flex-col">
-            <span className="text-text-tertiary text-[11px] uppercase tracking-wider">
-              {t('fleet.maintenance')}
+            <span className="text-alarm-p0 text-[11px] uppercase tracking-wider flex items-center gap-1">
+              <span aria-hidden="true">{STATUS_SHAPE.maintenance}</span>
+              {t('status.maintenance')}
             </span>
             <span className="text-alarm-p0 text-2xl font-semibold font-mono">
               {summary ? summary.maintenance : '—'}
             </span>
-          </div>
-        </Card>
-        {/* Savings — unchanged */}
-        <Card className="min-w-[160px] flex-1">
-          <div className="flex flex-col">
-            <span
-              className="text-text-tertiary text-[11px] uppercase tracking-wider"
-              title={t('fleet.savingsTooltip')}
-            >
-              {t('fleet.savings')}
-              {savingsApi.data && (
-                <span className="normal-case tracking-normal"> · {t('fleet.savingsWindow')}</span>
-              )}
-            </span>
-            <span className="text-success text-2xl font-semibold font-mono">
-              {savingsApi.data
-                ? `€${Math.max(savingsApi.data.total_savings_eur, 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
-                : '—'}
-            </span>
-            <span className="text-text-tertiary text-[10px]">
-              {savingsApi.data
-                ? `${savingsApi.data.maintenance_count} ${t('fleet.maintenanceEvents')}`
-                : ''}
-            </span>
-            {savingsApi.data?.uptime_seconds != null && (
-              <span className="text-text-tertiary text-[10px]">
-                {t('fleet.uptimeReset', { up: formatUptime(savingsApi.data.uptime_seconds) })}
-              </span>
-            )}
           </div>
         </Card>
       </div>
@@ -372,12 +375,19 @@ export default function FleetOverview() {
         </Card>
       </div>
 
-      {/* ── Health Snapshot: compact per-machine bar strip + Open link (Task 5) ── */}
+      {/* ── Health Snapshot: per-machine health/RUL/status/button (ISA-101) ── */}
       {machines.length > 0 && (
         <Card title={t('fleet.healthSnapshot')} subtitle={t('fleet.healthSnapshotSub')} className="mb-4">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-6 gap-y-3 pt-1">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-4 pt-1">
             {machines.map((m) => (
-              <HealthBar key={m.id} id={m.id} score={m.health_score} />
+              <HealthBar
+                key={m.id}
+                id={m.id}
+                score={m.health_score}
+                rul={m.rul_hours}
+                status={m.status}
+                navigate={navigate}
+              />
             ))}
           </div>
         </Card>
@@ -408,7 +418,7 @@ export default function FleetOverview() {
             </div>
             <div className="flex justify-between text-[10px] text-text-tertiary mt-1">
               <span>-24h</span>
-              <span>{lang === 'tr' ? 'Şimdi' : 'Now'}</span>
+              <span>{t('fleet.now')}</span>
             </div>
           </>
         )}
