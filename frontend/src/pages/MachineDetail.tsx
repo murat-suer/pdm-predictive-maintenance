@@ -7,17 +7,55 @@ import Gauge from '../components/Gauge'
 import RadarPlot from '../components/RadarPlot'
 import Header from '../components/Header'
 import SensorTrendChart from '../components/SensorTrendChart'
+import AreaChart from '../components/charts/AreaChart'
+import { PALETTE } from '../components/charts/palette'
 import { apiPost } from '../api/client'
 import { useApi } from '../api/hooks'
 import { useI18n, type TranslationKey } from '../i18n'
 import type {
   AlarmItem,
   MachineDetailData,
+  MachineTimeline,
+  MhiHistoryResponse,
   SensorSeries,
   SensorSnapshot,
   WhatIfResult,
   WorkOrderItem,
 } from '../api/types'
+
+// ── ISA-101 redundant coding: color + shape + label per tier ─────────────────
+// Reused from FleetOverview — color is NEVER the only cue.
+const STATUS_COLOR: Record<string, string> = {
+  normal:      'text-success',
+  watch:       'text-alarm-p3',
+  action:      'text-alarm-p2',
+  critical:    'text-alarm-p4',
+  maintenance: 'text-alarm-p0',
+  offline:     'text-text-tertiary',
+  warning:     'text-alarm-p3',
+}
+
+/** Unicode glyphs — each tier has a visually distinct shape (ISA-101) */
+const STATUS_SHAPE: Record<string, string> = {
+  normal:      '●',
+  watch:       '▲',
+  action:      '◆',
+  critical:    '■',
+  maintenance: '▣',
+  offline:     '○',
+  warning:     '▲',
+}
+
+// Tier → hex colour for canvas-based charts (AreaChart uses this for the line)
+const STATUS_HEX: Record<string, string> = {
+  normal:      PALETTE.GOOD,
+  watch:       PALETTE.ALARM_P3,
+  action:      '#fb923c',
+  critical:    PALETTE.ALARM_P4,
+  maintenance: PALETTE.OBSERVE,
+  offline:     PALETTE.TICK,
+  warning:     PALETTE.ALARM_P3,
+}
 
 interface GaugeRanges {
   min: number
@@ -33,7 +71,6 @@ function gaugeRanges(sensor: SensorSnapshot): GaugeRanges {
   const crit = sensor.critical_threshold ?? 0
   const nominal = sensor.nominal_mu ?? 0
   if ((sensor.degradation_direction ?? 1) >= 0) {
-    // Higher is worse (vibration, temperature)
     const max = Math.max(crit * 1.3, sensor.value ?? 0)
     return {
       min: 0,
@@ -43,7 +80,6 @@ function gaugeRanges(sensor: SensorSnapshot): GaugeRanges {
       criticalRange: [crit, max],
     }
   }
-  // Lower is worse (oil pressure, outlet pressure)
   const max = Math.max(nominal * 1.4, sensor.value ?? 0)
   return {
     min: 0,
@@ -64,8 +100,6 @@ const statusBadgeVariant: Record<string, 'success' | 'warning' | 'error' | 'info
   offline:     'info',
 }
 
-// Scenarios act on specific sensors, so only the ones native to this
-// machine type are offered (full_cascade hits every sensor).
 const INJECT_SCENARIOS_BY_TYPE: Record<string, { id: string; label: string }[]> = {
   Compressor: [
     { id: 'oil_leak', label: 'Oil Leak' },
@@ -88,6 +122,34 @@ const priorityVariant: Record<string, 'p1' | 'p2' | 'p3' | 'p4'> = {
   HIGH: 'p3',
   CRITICAL: 'p4',
 }
+
+// ── Compact KPI tile ──────────────────────────────────────────────────────────
+
+interface KpiTileProps {
+  label: string
+  value: string
+  /** Optional ISA-101 tier key (for color+shape redundancy) */
+  tier?: string
+  /** Tailwind text-colour class override (without tier) */
+  colorClass?: string
+}
+
+function KpiTile({ label, value, tier, colorClass }: KpiTileProps) {
+  const cls = tier ? (STATUS_COLOR[tier] ?? 'text-text-primary') : (colorClass ?? 'text-text-primary')
+  const shape = tier ? (STATUS_SHAPE[tier] ?? '') : ''
+
+  return (
+    <div className="flex flex-col min-w-0 bg-bg-secondary border border-border-subtle rounded-lg px-3 py-2.5">
+      <span className="text-[10px] text-text-tertiary uppercase tracking-wide truncate">{label}</span>
+      <span className={`text-lg font-semibold font-mono tabular-nums mt-0.5 ${cls} flex items-center gap-1`}>
+        {shape && <span aria-hidden="true" className="text-base leading-none">{shape}</span>}
+        {value}
+      </span>
+    </div>
+  )
+}
+
+// ── What-If card (unchanged) ──────────────────────────────────────────────────
 
 function WhatIfCard({ machineId }: { machineId: string }) {
   const { t } = useI18n()
@@ -193,6 +255,149 @@ function WhatIfCard({ machineId }: { machineId: string }) {
   )
 }
 
+// ── Health / MHI trend chart ──────────────────────────────────────────────────
+
+function HealthTrendCard({ machineId, status }: { machineId: string; status: string }) {
+  const { t } = useI18n()
+  const mhiApi = useApi<MhiHistoryResponse>('/analytics/mhi-history?buckets=48', 60000)
+
+  const machineHistory = mhiApi.data?.machines.find((m) => m.machine_id === machineId)
+  const points = machineHistory?.points ?? []
+
+  const labels = points.map((p) =>
+    new Date(p.t).toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+  )
+  const values = points.map((p) => p.mhi)
+
+  // Colour the area by current status tier (ISA-101: colour paired with shape on KPI tiles)
+  const lineColor = STATUS_HEX[status] ?? PALETTE.GOOD
+
+  return (
+    <Card title={t('machine.healthTrend')} subtitle={t('machine.healthTrendSub')} className="mb-3">
+      {mhiApi.loading && !mhiApi.data ? (
+        <p className="text-text-tertiary text-xs py-4">…</p>
+      ) : values.length === 0 ? (
+        <p className="text-text-tertiary text-xs py-4">{t('machine.noHealthTrend')}</p>
+      ) : (
+        <AreaChart
+          labels={labels}
+          values={values}
+          color={lineColor}
+          ariaLabel={t('machine.healthTrend')}
+          height={160}
+          yLabel="MHI (0–100)"
+          formatValue={(v) => `${v.toFixed(0)}`}
+        />
+      )}
+    </Card>
+  )
+}
+
+// ── Decision & event history timeline ─────────────────────────────────────────
+
+/** Relative compact time: "<1m", "5m", "2h", "3d" */
+function relTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diffMs / 60000)
+  if (mins < 1) return '<1m'
+  if (mins < 60) return `${mins}m`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h`
+  return `${Math.floor(hrs / 24)}d`
+}
+
+function DecisionTimelineCard({ machineId }: { machineId: string }) {
+  const { t } = useI18n()
+  const timelineApi = useApi<MachineTimeline>(`/machines/${machineId}/timeline`, 30000)
+  const data = timelineApi.data
+
+  return (
+    <Card title={t('machine.decisionTimeline')} subtitle={t('machine.decisionTimelineSub')} className="mb-3">
+      {timelineApi.loading && !data ? (
+        <p className="text-text-tertiary text-xs py-4">…</p>
+      ) : (
+        <>
+          {/* Repair anchor chip */}
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-[10px] text-text-tertiary">{t('machine.timeline.repairedAt')}</span>
+            <span className="text-[10px] font-mono text-text-secondary">
+              {data?.repaired_at
+                ? `${new Date(data.repaired_at).toLocaleString()} (${relTime(data.repaired_at)} ago)`
+                : t('machine.timeline.noRepair')}
+            </span>
+            {data && data.count > 0 && (
+              <span className="ml-auto text-[10px] text-text-tertiary font-mono">
+                {data.count} event{data.count !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+
+          {!data || data.events.length === 0 ? (
+            <p className="text-text-tertiary text-xs py-2">{t('machine.timeline.noEvents')}</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="text-text-tertiary border-b border-border-default">
+                    <th className="pb-2 pr-3 font-medium">{t('machine.col.when')}</th>
+                    <th className="pb-2 pr-3 font-medium">{t('machine.col.tier')}</th>
+                    <th className="pb-2 pr-3 font-medium">{t('machine.col.recommendation')}</th>
+                    <th className="pb-2 pr-3 font-medium">{t('machine.col.outcome')}</th>
+                    <th className="pb-2 font-medium">{t('machine.col.decidedBy')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.events.map((ev, idx) => {
+                    const tier = ev.tier?.toLowerCase() ?? 'normal'
+                    const shapeClass = STATUS_COLOR[tier] ?? 'text-text-secondary'
+                    const shape = STATUS_SHAPE[tier] ?? '○'
+                    return (
+                      <tr key={idx} className="border-b border-border-subtle last:border-0">
+                        <td className="py-2 pr-3 font-mono text-text-secondary whitespace-nowrap">
+                          {new Date(ev.at).toLocaleString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </td>
+                        <td className="py-2 pr-3">
+                          <span className={`flex items-center gap-1 font-medium text-[11px] ${shapeClass}`}>
+                            <span aria-hidden="true">{shape}</span>
+                            <span>{ev.tier ?? '—'}</span>
+                          </span>
+                        </td>
+                        <td className="py-2 pr-3 text-text-primary">
+                          {ev.recommendation
+                            ? ev.recommendation.replace(/_/g, ' ')
+                            : '—'}
+                        </td>
+                        <td className="py-2 pr-3 text-text-secondary capitalize">
+                          {ev.outcome ? ev.outcome.replace(/_/g, ' ').toLowerCase() : '—'}
+                        </td>
+                        <td className="py-2 text-text-tertiary font-mono text-[10px]">
+                          {ev.decided_by ?? '—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </Card>
+  )
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
 export default function MachineDetail() {
   const { id } = useParams<{ id: string }>()
   const { t } = useI18n()
@@ -265,11 +470,25 @@ export default function MachineDetail() {
       }
     })
 
+  // KPI derived values
+  const healthPct =
+    machine.health_score != null ? `${(machine.health_score * 100).toFixed(0)}%` : '—'
+  const rulDisplay =
+    machine.rul_hours == null
+      ? '—'
+      : machine.rul_hours < 1
+        ? `<1 ${t('machine.kpi.rulUnit')}`
+        : `${machine.rul_hours.toFixed(0)} ${t('machine.kpi.rulUnit')}`
+  const reliabilityDisplay =
+    machine.reliability != null ? `${machine.reliability.toFixed(1)}%` : '—'
+  const reliabilityColorClass =
+    machine.reliability != null && machine.reliability < 50 ? 'text-alarm-p4' : 'text-text-primary'
+
   return (
     <div className="p-4">
       <Header title={t('machine.title')} />
 
-      {/* Task 5: Back navigation button */}
+      {/* Back navigation */}
       <button
         onClick={() => navigate(-1)}
         className="mb-3 inline-flex items-center gap-1 text-xs text-alarm-p0 hover:underline"
@@ -278,7 +497,7 @@ export default function MachineDetail() {
         {t('machine.back')}
       </button>
 
-      {/* Machine Info Header */}
+      {/* ── Machine name + status strip ── */}
       <Card className="mb-3">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-4 flex-wrap">
@@ -289,28 +508,6 @@ export default function MachineDetail() {
               </p>
             </div>
             <Badge variant={badgeVariant} label={statusLabel} />
-            <div className="flex flex-col">
-              <span className="text-[11px] text-text-tertiary">{t('machine.rul')}</span>
-              <span className="text-sm font-mono text-text-primary">
-                {machine.rul_hours != null ? `${machine.rul_hours.toFixed(0)} h` : '—'}
-              </span>
-            </div>
-            <div className="flex flex-col">
-              <span className="text-[11px] text-text-tertiary">{t('machine.reliability')}</span>
-              <span
-                className={`text-sm font-mono ${
-                  machine.reliability != null && machine.reliability < 50 ? 'text-alarm-p4' : 'text-text-primary'
-                }`}
-              >
-                {machine.reliability != null ? `${machine.reliability.toFixed(1)}%` : '—'}
-              </span>
-            </div>
-            <div className="flex flex-col">
-              <span className="text-[11px] text-text-tertiary">{t('machine.health')}</span>
-              <span className="text-sm font-mono text-text-primary">
-                {machine.health_score != null ? `${(machine.health_score * 100).toFixed(0)}%` : '—'}
-              </span>
-            </div>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-[11px] text-text-tertiary">{t('machine.classification')}</span>
@@ -319,7 +516,40 @@ export default function MachineDetail() {
         </div>
       </Card>
 
-      {/* Sensor Gauges */}
+      {/* ── NEW: KPI band ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+        <KpiTile
+          label={t('machine.kpi.healthScore')}
+          value={healthPct}
+          tier={machine.status}
+        />
+        <KpiTile
+          label={t('machine.kpi.rul')}
+          value={rulDisplay}
+          colorClass={
+            machine.rul_hours != null && machine.rul_hours < 24
+              ? 'text-alarm-p4'
+              : machine.rul_hours != null && machine.rul_hours < 72
+                ? 'text-alarm-p3'
+                : 'text-text-primary'
+          }
+        />
+        <KpiTile
+          label={t('machine.kpi.reliability')}
+          value={reliabilityDisplay}
+          colorClass={reliabilityColorClass}
+        />
+        <KpiTile
+          label={t('machine.kpi.classification')}
+          value={machine.classification ?? '—'}
+          colorClass="text-text-primary"
+        />
+      </div>
+
+      {/* ── NEW: Health / MHI trend ── */}
+      {id && <HealthTrendCard machineId={id} status={machine.status} />}
+
+      {/* ── Sensor Gauges + Failure Modes ── */}
       <div className="grid grid-cols-5 gap-3 mb-3">
         <div className="col-span-2">
           <Card title={t('machine.failureModes')} subtitle={machine.failure_mode ?? undefined}>
@@ -383,7 +613,7 @@ export default function MachineDetail() {
         </div>
       </div>
 
-      {/* Radar + What-If + Work Orders */}
+      {/* ── Radar + What-If + Work Orders ── */}
       <div className="grid grid-cols-5 gap-3">
         <div className="col-span-2">
           <Card title={t('machine.sensorProfile')} subtitle={t('machine.sensorProfileSub')}>
@@ -449,7 +679,7 @@ export default function MachineDetail() {
         </div>
       </div>
 
-      {/* Sensor Trends */}
+      {/* ── Sensor Trends ── */}
       <Card title={t('machine.sensorTrends')} subtitle={t('machine.sensorTrendsSub')} className="mt-3">
         {Object.keys(series).length === 0 ? (
           <p className="text-text-tertiary text-xs py-4">{t('machine.noReadings')}</p>
@@ -476,7 +706,10 @@ export default function MachineDetail() {
         )}
       </Card>
 
-      {/* Alarm History + Demo Controls */}
+      {/* ── NEW: Decision & Event Timeline ── */}
+      {id && <DecisionTimelineCard machineId={id} />}
+
+      {/* ── Alarm History + Demo Controls ── */}
       <div className="grid grid-cols-5 gap-3 mt-3">
         <div className="col-span-3">
           <Card title={t('machine.alarmHistory')} subtitle={t('machine.alarmHistorySub')}>
