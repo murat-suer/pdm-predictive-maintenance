@@ -32,6 +32,7 @@ const en = {
   // Fleet overview
   'fleet.title': 'Fleet Overview',
   'fleet.online': 'Online',
+  'fleet.normal': 'Normal',
   'fleet.warning': 'Warning',
   'fleet.critical': 'Critical',
   'fleet.maintenance': 'Maintenance',
@@ -66,9 +67,12 @@ const en = {
   'fleet.mhiTrendSub': 'Machine Health Index per machine over the last 24 h (0–100)',
   'fleet.healthSnapshot': 'Health Snapshot',
   'fleet.healthSnapshotSub': 'Current health score per machine — red <55, amber <70, teal ≥70',
+  'fleet.openMachineLink': 'Open',
 
   // Status labels
   'status.normal': 'Normal',
+  'status.watch': 'Watch',
+  'status.action': 'Action',
   'status.warning': 'Warning',
   'status.critical': 'Critical',
   'status.maintenance': 'In Maintenance',
@@ -115,6 +119,7 @@ const en = {
 
   // Machine detail
   'machine.title': 'Machine Detail',
+  'machine.back': '← Back',
   'machine.rul': 'RUL',
   'machine.reliability': 'Reliability',
   'machine.health': 'Health',
@@ -369,6 +374,7 @@ const tr: Record<TranslationKey, string> = {
 
   'fleet.title': 'Filo Genel Görünümü',
   'fleet.online': 'Çevrimiçi',
+  'fleet.normal': 'Normal',
   'fleet.warning': 'Uyarı',
   'fleet.critical': 'Kritik',
   'fleet.maintenance': 'Bakımda',
@@ -403,8 +409,11 @@ const tr: Record<TranslationKey, string> = {
   'fleet.mhiTrendSub': 'Son 24 saatte makine başına Sağlık Endeksi (0–100)',
   'fleet.healthSnapshot': 'Sağlık Anlık Görüntüsü',
   'fleet.healthSnapshotSub': 'Makine başına güncel sağlık skoru — kırmızı <55, amber <70, teal ≥70',
+  'fleet.openMachineLink': 'Aç',
 
   'status.normal': 'Normal',
+  'status.watch': 'İzle',
+  'status.action': 'Eylem',
   'status.warning': 'Uyarı',
   'status.critical': 'Kritik',
   'status.maintenance': 'Bakımda',
@@ -449,6 +458,7 @@ const tr: Record<TranslationKey, string> = {
   'scenario.SHUTDOWN': 'Acil duruş — derhal değişim',
 
   'machine.title': 'Makine Detayı',
+  'machine.back': '← Geri',
   'machine.rul': 'RUL',
   'machine.reliability': 'Güvenilirlik',
   'machine.health': 'Sağlık',
@@ -696,6 +706,7 @@ const de: Record<TranslationKey, string> = {
 
   'fleet.title': 'Flottenübersicht',
   'fleet.online': 'Online',
+  'fleet.normal': 'Normal',
   'fleet.warning': 'Warnung',
   'fleet.critical': 'Kritisch',
   'fleet.maintenance': 'In Wartung',
@@ -730,8 +741,11 @@ const de: Record<TranslationKey, string> = {
   'fleet.mhiTrendSub': 'Maschinengesundheitsindex je Maschine über 24 Std. (0–100)',
   'fleet.healthSnapshot': 'Gesundheits-Snapshot',
   'fleet.healthSnapshotSub': 'Aktueller Gesundheitswert je Maschine — rot <55, amber <70, teal ≥70',
+  'fleet.openMachineLink': 'Öffnen',
 
   'status.normal': 'Normal',
+  'status.watch': 'Beobachten',
+  'status.action': 'Maßnahme',
   'status.warning': 'Warnung',
   'status.critical': 'Kritisch',
   'status.maintenance': 'In Wartung',
@@ -776,6 +790,7 @@ const de: Record<TranslationKey, string> = {
   'scenario.SHUTDOWN': 'Not-Stopp — sofortiger Austausch',
 
   'machine.title': 'Maschinendetails',
+  'machine.back': '← Zurück',
   'machine.rul': 'RUL',
   'machine.reliability': 'Zuverlässigkeit',
   'machine.health': 'Gesundheit',

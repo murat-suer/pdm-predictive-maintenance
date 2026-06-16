@@ -66,8 +66,12 @@ def client(db_session):
     app.dependency_overrides.clear()
 
 
-def seed_machine_data(db, machine_id="AC-201"):
-    """Insert one healthy reading, health score, anomaly and alarm."""
+def seed_machine_data(db, machine_id="AC-201", ai_recommendation: str | None = None):
+    """Insert one healthy reading, health score, anomaly and alarm.
+
+    Optionally sets ``ai_recommendation`` on the auto-created DecisionLog so
+    status tests can assert recommendation-based tiers.
+    """
     now = datetime.now(UTC)
     db.add(
         SensorReading(
@@ -114,6 +118,24 @@ def seed_machine_data(db, machine_id="AC-201"):
         last_updated=now,
     )
     db.add(alarm)
+    db.flush()
+    # The after_insert listener auto-creates a PENDING DecisionLog; set the
+    # recommendation if requested (bypasses the listener's default None).
+    if ai_recommendation is not None:
+        decision = db.query(DecisionLog).filter(DecisionLog.alarm_id == alarm.id).first()
+        if decision is not None:
+            decision.ai_recommendation = ai_recommendation
+        else:
+            # Listener did not fire (e.g. in certain SQLite setups) — create manually.
+            db.add(
+                DecisionLog(
+                    alarm_id=alarm.id,
+                    machine_id=machine_id,
+                    action="PENDING",
+                    ai_recommendation=ai_recommendation,
+                    created_at=now,
+                )
+            )
     db.commit()
     return alarm
 
@@ -127,7 +149,8 @@ class TestMachinesEndpoints:
         assert {"AC-201", "HX-202", "CM-203", "AC-301", "HX-302", "CM-303"} == ids
 
     def test_machine_status_critical_with_active_alarm(self, client, db_session):
-        seed_machine_data(db_session)
+        """SHUTDOWN recommendation on an active alarm → critical tier."""
+        seed_machine_data(db_session, ai_recommendation="SHUTDOWN")
         response = client.get("/api/v1/machines")
         machine = next(m for m in response.json() if m["id"] == "AC-201")
         assert machine["status"] == "critical"
@@ -135,10 +158,8 @@ class TestMachinesEndpoints:
         assert machine["rul_hours"] == 96.0
         assert machine["reliability"] == 84.0
 
-    def test_status_reflects_critical_health_without_alarm(self, client, db_session):
-        """A machine whose MHI has collapsed must not read 'normal' just
-        because no discrete alarm has fired (regression: degraded machines
-        showed a green badge on the fleet view)."""
+    def test_status_observe_recommendation_yields_watch(self, client, db_session):
+        """OBSERVE recommendation → watch (not critical, even with low health)."""
         now = datetime.now(UTC)
         db_session.add(
             SensorReading(
@@ -160,37 +181,61 @@ class TestMachinesEndpoints:
             )
         )
         db_session.commit()
+        # Seed an alarm + OBSERVE recommendation for HX-202.
+        seed_machine_data(db_session, machine_id="HX-202", ai_recommendation="OBSERVE")
         machine = next(
             m for m in client.get("/api/v1/machines").json() if m["id"] == "HX-202"
         )
-        assert machine["status"] == "critical"
+        assert machine["status"] == "watch"
 
-    def test_status_reflects_warning_band_health_without_alarm(self, client, db_session):
+    def test_status_planned_recommendation_yields_action(self, client, db_session):
+        """PLANNED recommendation → action tier."""
+        seed_machine_data(db_session, machine_id="CM-303", ai_recommendation="PLANNED")
+        machine = next(
+            m for m in client.get("/api/v1/machines").json() if m["id"] == "CM-303"
+        )
+        assert machine["status"] == "action"
+
+    def test_status_active_alarm_no_recommendation_yields_watch(self, client, db_session):
+        """Active alarm with no recommendation at all → watch (safe default)."""
+        # seed_machine_data with no ai_recommendation: alarm exists, no recommendation set.
+        seed_machine_data(db_session, machine_id="AC-301", ai_recommendation=None)
+        # Ensure the DecisionLog has no recommendation (listener creates it with None).
+        machine = next(
+            m for m in client.get("/api/v1/machines").json() if m["id"] == "AC-301"
+        )
+        assert machine["status"] == "watch"
+
+    def test_status_no_alarm_no_recommendation_yields_normal(self, client, db_session):
+        """No active anomaly and no decision → normal."""
         now = datetime.now(UTC)
         db_session.add(
             SensorReading(
-                machine_id="CM-303", timestamp=now,
+                machine_id="CM-203", timestamp=now,
                 sensor_name="belt_tension", value=10.5,
-            )
-        )
-        db_session.add(
-            MachineHealthScore(
-                machine_id="CM-303",
-                calculated_at=now,
-                health_score=0.62,
-                availability_score=0.9,
-                reliability_score=0.9,
-                condition_score=0.62,
-                rul_hours=48.0,
-                confidence=0.9,
-                classification="Good",
             )
         )
         db_session.commit()
         machine = next(
+            m for m in client.get("/api/v1/machines").json() if m["id"] == "CM-203"
+        )
+        assert machine["status"] == "normal"
+
+    def test_status_dispatch_technician_recommendation_yields_watch(self, client, db_session):
+        """DISPATCH_TECHNICIAN recommendation → watch tier."""
+        seed_machine_data(db_session, machine_id="HX-302", ai_recommendation="DISPATCH_TECHNICIAN")
+        machine = next(
+            m for m in client.get("/api/v1/machines").json() if m["id"] == "HX-302"
+        )
+        assert machine["status"] == "watch"
+
+    def test_status_reduce_load_recommendation_yields_critical(self, client, db_session):
+        """REDUCE_LOAD recommendation → critical tier."""
+        seed_machine_data(db_session, machine_id="CM-303", ai_recommendation="REDUCE_LOAD")
+        machine = next(
             m for m in client.get("/api/v1/machines").json() if m["id"] == "CM-303"
         )
-        assert machine["status"] == "warning"
+        assert machine["status"] == "critical"
 
     def test_machine_offline_without_recent_readings(self, client):
         response = client.get("/api/v1/machines")
@@ -222,7 +267,8 @@ class TestMachinesEndpoints:
 
 class TestFleetEndpoints:
     def test_fleet_summary_counts(self, client, db_session):
-        seed_machine_data(db_session)
+        """SHUTDOWN recommendation on AC-201 → critical; remaining 5 machines offline."""
+        seed_machine_data(db_session, ai_recommendation="SHUTDOWN")
         response = client.get("/api/v1/fleet/summary")
         assert response.status_code == 200
         data = response.json()
@@ -230,6 +276,30 @@ class TestFleetEndpoints:
         assert data["critical"] == 1
         assert data["offline"] == 5
         assert data["active_alarms"] == 1
+
+    def test_fleet_summary_new_tier_fields(self, client, db_session):
+        """Fleet summary exposes online, watch, action, and warning == watch + action."""
+        # AC-201: SHUTDOWN → critical  (online)
+        seed_machine_data(db_session, machine_id="AC-201", ai_recommendation="SHUTDOWN")
+        # AC-301: PLANNED → action     (online)
+        seed_machine_data(db_session, machine_id="AC-301", ai_recommendation="PLANNED")
+        # HX-302: OBSERVE → watch      (online)
+        seed_machine_data(db_session, machine_id="HX-302", ai_recommendation="OBSERVE")
+        # Remaining 3 machines have no readings → offline.
+        response = client.get("/api/v1/fleet/summary")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 6
+        assert data["online"] == data["total"] - data["offline"], (
+            "online must equal total − offline"
+        )
+        assert data["watch"] == 1
+        assert data["action"] == 1
+        assert data["critical"] == 1
+        assert data["warning"] == data["watch"] + data["action"], (
+            "warning is the backward-compat aggregate of watch + action"
+        )
+        assert data["offline"] == 3
 
     def test_fleet_health_trend(self, client, db_session):
         seed_machine_data(db_session)

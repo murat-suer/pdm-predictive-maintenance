@@ -21,10 +21,18 @@ class MachineSummary(BaseModel):
 
 
 class FleetSummary(BaseModel):
-    """KPI counts across the fleet."""
+    """KPI counts across the fleet.
+
+    Status vocabulary: normal | watch | action | critical | maintenance | offline.
+    ``online``  = total − offline  (convenience total for connected machines).
+    ``warning`` = watch + action   (backward-compatible aggregate for existing clients).
+    """
     total: int
+    online: int
     normal: int
-    warning: int
+    watch: int
+    action: int
+    warning: int  # = watch + action, kept for backward compatibility
     critical: int
     maintenance: int
     offline: int

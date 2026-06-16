@@ -23,10 +23,12 @@ router = APIRouter(prefix="/fleet", tags=["fleet"])
 async def fleet_summary(db: Session = Depends(get_db)):
     """KPI counts for the navbar and fleet overview cards."""
     machine_ids = list(MACHINE_CONFIGS.keys())
-    counts = {"normal": 0, "warning": 0, "critical": 0, "maintenance": 0, "offline": 0}
+    counts: dict[str, int] = {
+        "normal": 0, "watch": 0, "action": 0, "critical": 0, "maintenance": 0, "offline": 0,
+    }
     for machine_id in machine_ids:
         status, _ = derive_machine_status(db, machine_id)
-        counts[status] += 1
+        counts[status] = counts.get(status, 0) + 1
 
     scores = latest_health_scores(db, machine_ids)
     reliabilities = [
@@ -43,13 +45,19 @@ async def fleet_summary(db: Session = Depends(get_db)):
         or 0
     )
 
+    watch = counts["watch"]
+    action = counts["action"]
+    offline = counts["offline"]
     return FleetSummary(
         total=len(machine_ids),
+        online=len(machine_ids) - offline,
         normal=counts["normal"],
-        warning=counts["warning"],
+        watch=watch,
+        action=action,
+        warning=watch + action,
         critical=counts["critical"],
         maintenance=counts["maintenance"],
-        offline=counts["offline"],
+        offline=offline,
         avg_reliability=avg_reliability,
         active_alarms=active_alarms,
     )

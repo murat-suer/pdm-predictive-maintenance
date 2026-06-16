@@ -31,6 +31,19 @@ interface MultiLineChartProps {
   showLegend?: boolean
 }
 
+// ISA-101 colorblind-safe: each series gets a DISTINCT dash pattern so the
+// line can be identified without relying on color alone.
+const DASH_PATTERNS: number[][] = [
+  [],           // solid
+  [6, 3],       // dash
+  [2, 2],       // dot
+  [6, 3, 2, 3], // dash-dot
+  [10, 4],      // long dash
+  [1, 3],       // dot (tight)
+  [8, 3, 2, 3, 2, 3], // dash-dot-dot
+  [14, 4],      // extra long dash
+]
+
 export default function MultiLineChart({
   labels,
   series,
@@ -55,12 +68,13 @@ export default function MultiLineChart({
 
   const fmt = formatValue ?? ((v: number) => v.toFixed(1))
 
-  const datasets = series.map((s) => ({
+  const datasets = series.map((s, idx) => ({
     label: s.label,
     data: s.values,
     borderColor: s.color,
     backgroundColor: s.color,
     borderWidth: 1.5,
+    borderDash: DASH_PATTERNS[idx % DASH_PATTERNS.length],
     tension: 0.25,
     pointRadius: 0,
     pointHoverRadius: 3,
@@ -112,17 +126,40 @@ export default function MultiLineChart({
           }}
         />
       </div>
-      {/* Custom HTML legend — one row per machine, space-efficient */}
+      {/* Custom HTML legend — shows color swatch + dash pattern sample + label.
+          This satisfies ISA-101: identity is NOT conveyed by color alone. */}
       <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
-        {series.map((s) => (
-          <span key={s.id} className="flex items-center gap-1 text-[10px] text-text-secondary">
-            <span
-              className="inline-block w-3 h-0.5 rounded"
-              style={{ backgroundColor: s.color }}
-            />
-            {s.label}
-          </span>
-        ))}
+        {series.map((s, idx) => {
+          const dash = DASH_PATTERNS[idx % DASH_PATTERNS.length]
+          // Build an SVG line-style sample that mirrors the actual borderDash
+          const svgW = 24
+          const svgH = 8
+          const strokeDasharray = dash.length > 0 ? dash.join(',') : undefined
+
+          return (
+            <span key={s.id} className="flex items-center gap-1.5 text-[10px] text-text-secondary">
+              {/* SVG renders the actual dash pattern, not just a color block */}
+              <svg
+                width={svgW}
+                height={svgH}
+                viewBox={`0 0 ${svgW} ${svgH}`}
+                aria-hidden="true"
+                style={{ flexShrink: 0 }}
+              >
+                <line
+                  x1="0"
+                  y1={svgH / 2}
+                  x2={svgW}
+                  y2={svgH / 2}
+                  stroke={s.color}
+                  strokeWidth="2"
+                  strokeDasharray={strokeDasharray}
+                />
+              </svg>
+              {s.label}
+            </span>
+          )
+        })}
       </div>
     </div>
   )

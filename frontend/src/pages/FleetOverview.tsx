@@ -18,30 +18,44 @@ import type {
   SavingsSummary,
 } from '../api/types'
 
-const statusColor: Record<string, string> = {
-  normal: 'text-success',
-  warning: 'text-alarm-p3',
-  critical: 'text-alarm-p4',
+// ── ISA-101 redundant coding: color + shape + label per tier ────────────────
+// Each tier has a DISTINCT shape so colorblind users never rely on hue alone.
+const STATUS_COLOR: Record<string, string> = {
+  normal:      'text-success',
+  watch:       'text-alarm-p3',
+  action:      'text-alarm-p2',
+  critical:    'text-alarm-p4',
   maintenance: 'text-alarm-p0',
-  offline: 'text-text-tertiary',
+  offline:     'text-text-tertiary',
+  // legacy alias kept for safety
+  warning:     'text-alarm-p3',
 }
 
-const statusShape: Record<string, string> = {
-  normal: '●',
-  warning: '▲',
-  critical: '⬡',
-  maintenance: '⚙',
-  offline: '—',
+/** Unicode glyphs — each tier has a visually distinct shape */
+const STATUS_SHAPE: Record<string, string> = {
+  normal:      '●',   // filled circle
+  watch:       '▲',   // triangle
+  action:      '◆',   // diamond
+  critical:    '■',   // square (filled)
+  maintenance: '▣',   // square with inner square
+  offline:     '○',   // hollow circle
+  // legacy alias
+  warning:     '▲',
 }
 
-// ISA-101: green/teal good, amber warning, red critical, blue maintenance, gray offline
+// ISA-101: green/teal good, amber watch, orange action, red critical, blue maintenance, gray offline
 const STATUS_DONUT_COLORS: Record<string, string> = {
-  normal: PALETTE.GOOD,
-  warning: PALETTE.ALARM_P3,
-  critical: PALETTE.ALARM_P4,
+  normal:      PALETTE.GOOD,
+  watch:       PALETTE.ALARM_P3,
+  action:      '#fb923c',         // orange-400 — between amber and red
+  critical:    PALETTE.ALARM_P4,
   maintenance: PALETTE.OBSERVE,
-  offline: PALETTE.TICK,
+  offline:     PALETTE.TICK,
+  warning:     PALETTE.ALARM_P3,
 }
+
+// Donut legend also shows shape so it is redundant-coded
+const STATUS_LEGEND_SHAPE: Record<string, string> = STATUS_SHAPE
 
 const machineTypes = ['All', 'Compressor', 'Heat Exchanger', 'Conveyor'] as const
 
@@ -62,38 +76,49 @@ function fmtLabel(iso: string): string {
   })
 }
 
-// Compact per-machine health bar strip — ISA-101 color bands
+// Compact per-machine health bar strip — ISA-101 color bands + link to detail
 function HealthBar({ id, score }: { id: string; score: number | null }) {
+  const { t } = useI18n()
   const pct = score != null ? Math.min(Math.max(score * 100, 0), 100) : null
   const barColor =
     pct == null ? PALETTE.TICK : pct < 55 ? PALETTE.ALARM_P4 : pct < 70 ? PALETTE.ALARM_P3 : PALETTE.GOOD
 
   return (
-    <div className="flex items-center gap-2 min-w-0">
-      <span
-        className="text-[10px] font-mono text-text-secondary shrink-0 w-16 truncate"
-        title={id}
-      >
-        {id}
-      </span>
-      <div className="flex-1 relative h-3 bg-bg-secondary rounded-sm overflow-hidden border border-border-subtle">
-        {pct != null ? (
-          <div
-            className="absolute left-0 top-0 h-full rounded-sm transition-all duration-500"
-            style={{ width: `${pct}%`, backgroundColor: barColor, opacity: 0.75 }}
-          />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-[9px] text-text-tertiary">—</span>
-          </div>
-        )}
+    <div className="flex flex-col gap-0.5 min-w-0">
+      <div className="flex items-center gap-2 min-w-0">
+        <span
+          className="text-[10px] font-mono text-text-secondary shrink-0 w-16 truncate"
+          title={id}
+        >
+          {id}
+        </span>
+        <div className="flex-1 relative h-3 bg-bg-secondary rounded-sm overflow-hidden border border-border-subtle">
+          {pct != null ? (
+            <div
+              className="absolute left-0 top-0 h-full rounded-sm transition-all duration-500"
+              style={{ width: `${pct}%`, backgroundColor: barColor, opacity: 0.75 }}
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-[9px] text-text-tertiary">—</span>
+            </div>
+          )}
+        </div>
+        <span
+          className="text-[10px] font-mono tabular-nums shrink-0 w-8 text-right"
+          style={{ color: barColor }}
+        >
+          {pct != null ? `${pct.toFixed(0)}%` : '—'}
+        </span>
       </div>
-      <span
-        className="text-[10px] font-mono tabular-nums shrink-0 w-8 text-right"
-        style={{ color: barColor }}
+      {/* Task 5: Link to machine detail page under each bar */}
+      <Link
+        to={`/machines/${id}`}
+        className="text-[9px] text-alarm-p0 hover:underline ml-0 self-start"
+        title={t('fleet.openMachine')}
       >
-        {pct != null ? `${pct.toFixed(0)}%` : '—'}
-      </span>
+        {t('fleet.openMachineLink')} ↗
+      </Link>
     </div>
   )
 }
@@ -124,8 +149,6 @@ export default function FleetOverview() {
             status: live.status,
             top_alarm: live.top_alarm,
             health_score: live.health_score,
-            // Never let a sparser live frame blank out values the REST
-            // endpoint already resolved.
             rul_hours: live.rul_hours ?? m.rul_hours,
             reliability: live.reliability ?? m.reliability,
           }
@@ -133,8 +156,10 @@ export default function FleetOverview() {
     })
   }, [machinesApi.data, snapshot])
 
+  // Task 2: "Alert" filter means any of watch/action/critical (not just !normal)
   const filteredMachines = machines.filter((m) => {
-    if (filter === 'Alert' && m.status === 'normal') return false
+    const isAlert = m.status === 'watch' || m.status === 'action' || m.status === 'critical' || m.status === 'warning'
+    if (filter === 'Alert' && !isAlert) return false
     if (filter === 'Normal' && m.status !== 'normal') return false
     if (typeFilter !== 'All' && m.type !== typeFilter) return false
     return true
@@ -143,14 +168,15 @@ export default function FleetOverview() {
   const summary = summaryApi.data
   const trend = trendApi.data ?? []
 
-  // ── Fleet status donut slices ──────────────────────────────────────────────
+  // ── Fleet status donut slices — shape+text in legend (Task 3) ─────────────
   const donutSlices = useMemo(() => {
     if (!summary) return []
     const entries: { key: string; label: string; count: number }[] = [
-      { key: 'normal', label: t('status.normal'), count: summary.normal },
-      { key: 'warning', label: t('status.warning'), count: summary.warning },
-      { key: 'critical', label: t('status.critical'), count: summary.critical },
-      { key: 'maintenance', label: t('fleet.maintenance'), count: summary.maintenance },
+      { key: 'normal',      label: `${STATUS_LEGEND_SHAPE['normal']} ${t('status.normal')}`,      count: summary.normal },
+      { key: 'watch',       label: `${STATUS_LEGEND_SHAPE['watch']} ${t('status.watch')}`,         count: summary.watch ?? 0 },
+      { key: 'action',      label: `${STATUS_LEGEND_SHAPE['action']} ${t('status.action')}`,       count: summary.action ?? 0 },
+      { key: 'critical',    label: `${STATUS_LEGEND_SHAPE['critical']} ${t('status.critical')}`,   count: summary.critical },
+      { key: 'maintenance', label: `${STATUS_LEGEND_SHAPE['maintenance']} ${t('fleet.maintenance')}`, count: summary.maintenance },
     ]
     return entries
       .filter((e) => e.count > 0)
@@ -210,29 +236,45 @@ export default function FleetOverview() {
     <div className="p-4">
       <Header title={t('fleet.title')} />
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-5 gap-3 mb-4">
-        <Card>
+      {/* Task 1: 6 KPI cards — Online · Normal · Warning · Critical · Maintenance · Savings */}
+      <div className="flex flex-wrap gap-3 mb-4">
+        {/* Online = total − offline */}
+        <Card className="min-w-[120px] flex-1">
           <div className="flex flex-col">
             <span className="text-text-tertiary text-[11px] uppercase tracking-wider">
               {t('fleet.online')}
             </span>
             <span className="text-text-primary text-2xl font-semibold font-mono">
+              {summary ? summary.online : '—'}
+            </span>
+          </div>
+        </Card>
+        {/* Normal = summary.normal */}
+        <Card className="min-w-[120px] flex-1">
+          <div className="flex flex-col">
+            <span className="text-text-tertiary text-[11px] uppercase tracking-wider">
+              {t('fleet.normal')}
+            </span>
+            <span className="text-success text-2xl font-semibold font-mono">
               {summary ? summary.normal : '—'}
             </span>
           </div>
         </Card>
-        <Card>
+        {/* Warning = watch + action (or summary.warning) */}
+        <Card className="min-w-[120px] flex-1">
           <div className="flex flex-col">
             <span className="text-text-tertiary text-[11px] uppercase tracking-wider">
               {t('fleet.warning')}
             </span>
             <span className="text-alarm-p3 text-2xl font-semibold font-mono">
-              {summary ? summary.warning : '—'}
+              {summary
+                ? (summary.warning ?? ((summary.watch ?? 0) + (summary.action ?? 0)))
+                : '—'}
             </span>
           </div>
         </Card>
-        <Card>
+        {/* Critical */}
+        <Card className="min-w-[120px] flex-1">
           <div className="flex flex-col">
             <span className="text-text-tertiary text-[11px] uppercase tracking-wider">
               {t('fleet.critical')}
@@ -242,7 +284,8 @@ export default function FleetOverview() {
             </span>
           </div>
         </Card>
-        <Card>
+        {/* Maintenance */}
+        <Card className="min-w-[120px] flex-1">
           <div className="flex flex-col">
             <span className="text-text-tertiary text-[11px] uppercase tracking-wider">
               {t('fleet.maintenance')}
@@ -252,7 +295,8 @@ export default function FleetOverview() {
             </span>
           </div>
         </Card>
-        <Card>
+        {/* Savings — unchanged */}
+        <Card className="min-w-[160px] flex-1">
           <div className="flex flex-col">
             <span
               className="text-text-tertiary text-[11px] uppercase tracking-wider"
@@ -284,7 +328,7 @@ export default function FleetOverview() {
 
       {/* ── Visual band: Status Donut + MHI Trend ── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-        {/* Fleet status donut — HR-readable at a glance */}
+        {/* Fleet status donut — shape+text in legend (ISA-101 Task 3) */}
         <Card title={t('fleet.statusDist')} subtitle={t('fleet.statusDistSub')}>
           {summaryApi.loading && !summary ? (
             <div className="flex items-center justify-center h-40 text-text-tertiary text-xs">
@@ -328,10 +372,10 @@ export default function FleetOverview() {
         </Card>
       </div>
 
-      {/* ── Health Snapshot: compact per-machine bar strip ── */}
+      {/* ── Health Snapshot: compact per-machine bar strip + Open link (Task 5) ── */}
       {machines.length > 0 && (
         <Card title={t('fleet.healthSnapshot')} subtitle={t('fleet.healthSnapshotSub')} className="mb-4">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-6 gap-y-2 pt-1">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-6 gap-y-3 pt-1">
             {machines.map((m) => (
               <HealthBar key={m.id} id={m.id} score={m.health_score} />
             ))}
@@ -339,7 +383,7 @@ export default function FleetOverview() {
         </Card>
       )}
 
-      {/* Fleet Health Trend (aggregate legacy bar — kept for the aggregate MHI view) */}
+      {/* Fleet Health Trend (aggregate legacy bar) */}
       <Card title={t('fleet.healthTrend')} subtitle={t('fleet.healthTrendSub')} className="mb-4">
         {trend.length === 0 ? (
           <p className="text-text-tertiary text-xs py-6 text-center">{t('fleet.noHealthHistory')}</p>
@@ -348,10 +392,6 @@ export default function FleetOverview() {
             <div className="flex items-end gap-0.5 h-24">
               {trend.map((point) => {
                 const value = point.avg_health_score * 100
-                // ISA-101 color discipline: the trend reads neutral by
-                // default; yellow/red only at the MHI classification
-                // boundaries (Degrading <70, Critical <55) — red is
-                // reserved for genuinely abnormal fleet states.
                 return (
                   <div
                     key={point.bucket}
@@ -441,9 +481,10 @@ export default function FleetOverview() {
                   </td>
                   <td className="py-2.5 pr-4 text-text-secondary">{m.type}</td>
                   <td className="py-2.5 pr-4 text-text-secondary">{m.line}</td>
+                  {/* Task 2: Status cell always shape + color + text label */}
                   <td className="py-2.5 pr-4">
-                    <span className={`${statusColor[m.status]} flex items-center gap-1`}>
-                      <span aria-hidden="true">{statusShape[m.status]}</span>
+                    <span className={`${STATUS_COLOR[m.status] ?? 'text-text-tertiary'} flex items-center gap-1`}>
+                      <span aria-hidden="true">{STATUS_SHAPE[m.status] ?? '○'}</span>
                       <span>{t(`status.${m.status}` as TranslationKey)}</span>
                     </span>
                   </td>
@@ -493,7 +534,15 @@ export default function FleetOverview() {
                     {m.health_history.length > 1 ? (
                       <Sparkline
                         dataPoints={m.health_history}
-                        color={m.status === 'critical' ? '#ff1744' : m.status === 'warning' ? '#ffd600' : '#60a5fa'}
+                        color={
+                          m.status === 'critical'
+                            ? '#ff1744'
+                            : m.status === 'watch' || m.status === 'warning'
+                              ? '#ffd600'
+                              : m.status === 'action'
+                                ? '#fb923c'
+                                : '#60a5fa'
+                        }
                         height={20}
                       />
                     ) : (

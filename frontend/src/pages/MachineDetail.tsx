@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import Card from '../components/Card'
 import Badge from '../components/Badge'
 import Button from '../components/Button'
@@ -55,11 +55,13 @@ function gaugeRanges(sensor: SensorSnapshot): GaugeRanges {
 }
 
 const statusBadgeVariant: Record<string, 'success' | 'warning' | 'error' | 'info'> = {
-  normal: 'success',
-  warning: 'warning',
-  critical: 'error',
+  normal:      'success',
+  watch:       'warning',
+  action:      'warning',
+  warning:     'warning',
+  critical:    'error',
   maintenance: 'info',
-  offline: 'info',
+  offline:     'info',
 }
 
 // Scenarios act on specific sensors, so only the ones native to this
@@ -194,6 +196,7 @@ function WhatIfCard({ machineId }: { machineId: string }) {
 export default function MachineDetail() {
   const { id } = useParams<{ id: string }>()
   const { t } = useI18n()
+  const navigate = useNavigate()
   const machineApi = useApi<MachineDetailData>(`/machines/${id}`, 10000)
   const workOrdersApi = useApi<WorkOrderItem[]>(`/work-orders?machine_id=${id}`, 30000)
   const seriesApi = useApi<SensorSeries>(`/machines/${id}/sensors?minutes=60`, 15000)
@@ -265,6 +268,15 @@ export default function MachineDetail() {
   return (
     <div className="p-4">
       <Header title={t('machine.title')} />
+
+      {/* Task 5: Back navigation button */}
+      <button
+        onClick={() => navigate(-1)}
+        className="mb-3 inline-flex items-center gap-1 text-xs text-alarm-p0 hover:underline"
+        aria-label={t('machine.back')}
+      >
+        {t('machine.back')}
+      </button>
 
       {/* Machine Info Header */}
       <Card className="mb-3">

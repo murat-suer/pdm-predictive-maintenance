@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from sqlalchemy.orm import Session
 
 from src.data_generator.machines import MACHINE_CONFIGS
-from src.database.models import AlarmState, AnomalyLog, MachineHealthScore, SensorReading
+from src.database.models import AlarmState, AnomalyLog, DecisionLog, MachineHealthScore, SensorReading
 
 ACTIVE_ALARM_STATUSES = ("UNACKNOWLEDGED", "ACKNOWLEDGED", "NORMAL_UNACK", "SHELVED")
 OFFLINE_AFTER_MINUTES = 5
@@ -165,48 +165,66 @@ def is_machine_in_maintenance(db: Session, machine_id: str) -> bool:
     return row is not None
 
 
-# Health bands mirror the MHI classifier (mhi_calculator): Good >= 0.70,
-# Critical < 0.55. A machine whose health has fallen into these bands must not
-# show a green "normal" badge just because no discrete alarm has fired yet.
-HEALTH_WARNING_BELOW = 0.70
-HEALTH_CRITICAL_BELOW = 0.55
+# Recommendation → status tier mapping.
+# Primary signal: the most recent active DecisionLog recommendation.
+# Unknown recommendation with an active alarm → "watch" (safe default).
+_RECOMMENDATION_TO_STATUS: dict[str, str] = {
+    "OBSERVE": "watch",
+    "DISPATCH_TECHNICIAN": "watch",
+    "PLANNED": "action",
+    "REDUCE_LOAD": "critical",
+    "SHUTDOWN": "critical",
+}
 
 
-def _health_based_status(db: Session, machine_id: str) -> str | None:
-    """Status implied by the latest MHI alone, or None if healthy / unknown."""
+def active_recommendation(db: Session, machine_id: str) -> str | None:
+    """Return the recommendation string for the machine's most recent active decision.
+
+    A decision is considered active when its linked alarm is still active
+    (status in ACTIVE_ALARM_STATUSES) OR the decision itself is still PENDING.
+    Returns ai_recommendation if present, else chosen_scenario_id, else None.
+    """
     row = (
-        db.query(MachineHealthScore.health_score)
-        .filter(MachineHealthScore.machine_id == machine_id)
-        .order_by(MachineHealthScore.calculated_at.desc())
+        db.query(DecisionLog)
+        .join(AlarmState, AlarmState.id == DecisionLog.alarm_id, isouter=True)
+        .filter(
+            DecisionLog.machine_id == machine_id,
+            (
+                AlarmState.status.in_(ACTIVE_ALARM_STATUSES)
+                | (DecisionLog.action == "PENDING")
+            ),
+        )
+        .order_by(DecisionLog.created_at.desc())
         .first()
     )
-    if row is None or row[0] is None:
+    if row is None:
         return None
-    health = row[0]
-    if health < HEALTH_CRITICAL_BELOW:
-        return "critical"
-    if health < HEALTH_WARNING_BELOW:
-        return "warning"
-    return None
+    return row.ai_recommendation or row.chosen_scenario_id
 
 
 def derive_machine_status(db: Session, machine_id: str) -> tuple[str, str | None]:
-    """Derive dashboard status (normal/warning/critical/maintenance/offline).
+    """Derive dashboard status: maintenance | offline | critical | action | watch | normal.
 
-    Status is the worst of the active-alarm severity and the machine's health
-    classification: degradation that has driven the MHI into the warning or
-    critical band surfaces on the fleet view even before a discrete alarm fires.
+    Priority order:
+    1. maintenance — machine is out of service.
+    2. offline     — no recent sensor reading.
+    3. recommendation-based tier — the most recent active decision recommendation
+       wins outright over raw alarm severity.
+    4. active alarm with no recommendation yet → "watch".
+    5. normal      — no active anomaly or decision.
     """
     if is_machine_in_maintenance(db, machine_id):
         return "maintenance", None
     if is_machine_offline(db, machine_id):
         return "offline", None
+
     severity, fault_label = active_alarm_severity(db, machine_id)
-    if severity == "CRITICAL":
-        return "critical", fault_label
-    if severity == "WARNING":
-        return "warning", fault_label
-    health_status = _health_based_status(db, machine_id)
-    if health_status is not None:
-        return health_status, None
+    has_active_alarm = severity is not None
+
+    recommendation = active_recommendation(db, machine_id)
+    if recommendation is not None:
+        tier = _RECOMMENDATION_TO_STATUS.get(recommendation, "watch")
+        return tier, fault_label
+    if has_active_alarm:
+        return "watch", fault_label
     return "normal", None

@@ -1,6 +1,6 @@
 // API response types mirroring src/api/schemas.py
 
-export type MachineStatus = 'normal' | 'warning' | 'critical' | 'maintenance' | 'offline'
+export type MachineStatus = 'normal' | 'watch' | 'action' | 'warning' | 'critical' | 'maintenance' | 'offline'
 
 export interface MachineSummary {
   id: string
@@ -18,7 +18,11 @@ export interface MachineSummary {
 
 export interface FleetSummary {
   total: number
+  online: number
   normal: number
+  watch: number
+  action: number
+  /** watch + action (pre-computed by backend) */
   warning: number
   critical: number
   maintenance: number
