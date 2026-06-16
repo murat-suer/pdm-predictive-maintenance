@@ -177,6 +177,59 @@ _RECOMMENDATION_TO_STATUS: dict[str, str] = {
 }
 
 
+# Tier severity order, for latching (a status never rewinds below the worst
+# tier reached since the last repair).
+_TIER_RANK: dict[str, int] = {"normal": 0, "watch": 1, "action": 2, "critical": 3}
+
+
+def _last_repair_time(db: Session, machine_id: str) -> datetime | None:
+    """When the machine was last actually repaired.
+
+    A repair takes the machine down (downtime_minutes > 0) and is what resets
+    the latched status. On-line technician inspections (no production stop)
+    are part of the watch cycle and do NOT reset the latch.
+    """
+    from src.database.models import MaintenanceLog
+
+    row = (
+        db.query(MaintenanceLog.performed_at)
+        .filter(
+            MaintenanceLog.machine_id == machine_id,
+            MaintenanceLog.performed_at.isnot(None),
+            MaintenanceLog.downtime_minutes.isnot(None),
+            MaintenanceLog.downtime_minutes > 0,
+        )
+        .order_by(MaintenanceLog.performed_at.desc())
+        .first()
+    )
+    return as_utc(row[0]) if row is not None and row[0] is not None else None
+
+
+def latched_status_tier(db: Session, machine_id: str) -> str:
+    """Worst status tier the machine has reached since its last repair.
+
+    ISA-18.2 latching: once a condition is flagged (e.g. OBSERVE → "watch"),
+    the status does not silently fall back to normal just because the operator
+    deferred it — it holds until a repair clears the condition, and only
+    climbs if a more serious recommendation arrives.
+    """
+    repaired_at = _last_repair_time(db, machine_id)
+    q = db.query(DecisionLog.ai_recommendation, DecisionLog.chosen_scenario_id).filter(
+        DecisionLog.machine_id == machine_id
+    )
+    if repaired_at is not None:
+        q = q.filter(DecisionLog.created_at > repaired_at)
+    worst = "normal"
+    for ai_rec, chosen in q.all():
+        rec = ai_rec or chosen
+        if rec is None:
+            continue
+        tier = _RECOMMENDATION_TO_STATUS.get(rec, "watch")
+        if _TIER_RANK[tier] > _TIER_RANK[worst]:
+            worst = tier
+    return worst
+
+
 def active_recommendation(db: Session, machine_id: str) -> str | None:
     """Return the recommendation string for the machine's most recent active decision.
 
@@ -221,10 +274,12 @@ def derive_machine_status(db: Session, machine_id: str) -> tuple[str, str | None
     severity, fault_label = active_alarm_severity(db, machine_id)
     has_active_alarm = severity is not None
 
-    recommendation = active_recommendation(db, machine_id)
-    if recommendation is not None:
-        tier = _RECOMMENDATION_TO_STATUS.get(recommendation, "watch")
-        return tier, fault_label
-    if has_active_alarm:
-        return "watch", fault_label
-    return "normal", None
+    # Latched: hold the worst tier reached since the last repair, so a deferred
+    # OBSERVE ("watch") does not rewind to normal until maintenance clears it.
+    tier = latched_status_tier(db, machine_id)
+    # An active alarm with no recommendation yet is at least a watch.
+    if tier == "normal" and has_active_alarm:
+        tier = "watch"
+    if tier == "normal":
+        return "normal", None
+    return tier, fault_label

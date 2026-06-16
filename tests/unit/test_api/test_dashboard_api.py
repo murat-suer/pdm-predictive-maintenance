@@ -221,6 +221,51 @@ class TestMachinesEndpoints:
         )
         assert machine["status"] == "normal"
 
+    def test_status_latches_until_repair(self, client, db_session):
+        """A flagged tier holds until a repair: an OBSERVE 'watch' does not
+        rewind to normal when its alarm later resolves without a repair, and
+        a real repair (downtime > 0) afterwards resets it."""
+        now = datetime.now(UTC)
+        db_session.add(
+            SensorReading(
+                machine_id="AC-201", timestamp=now,
+                sensor_name="vibration_rms", value=3.0,
+            )
+        )
+        anomaly = AnomalyLog(
+            machine_id="AC-201", detected_at=now - timedelta(hours=2),
+            anomaly_score=0.6, severity="WARNING", status="RESOLVED",
+            fault_type="BEARING_FAULT",
+        )
+        db_session.add(anomaly)
+        db_session.flush()
+        alarm = AlarmState(
+            anomaly_id=anomaly.id, machine_id="AC-201", level=1,
+            status="NORMAL",  # alarm already resolved, not active
+            created_at=now - timedelta(hours=2), last_updated=now - timedelta(hours=1),
+        )
+        db_session.add(alarm)
+        db_session.flush()
+        db_session.add(
+            DecisionLog(
+                alarm_id=alarm.id, machine_id="AC-201", action="APPROVE",
+                ai_recommendation="OBSERVE", created_at=now - timedelta(hours=2),
+            )
+        )
+        db_session.commit()
+        # No repair yet → latched at watch even though the alarm is resolved.
+        m = next(x for x in client.get("/api/v1/machines").json() if x["id"] == "AC-201")
+        assert m["status"] == "watch"
+        # A real repair (downtime > 0) after the decision resets the latch.
+        db_session.add(
+            MaintenanceLog(
+                machine_id="AC-201", performed_at=now, downtime_minutes=45, cost_eur=3000.0,
+            )
+        )
+        db_session.commit()
+        m = next(x for x in client.get("/api/v1/machines").json() if x["id"] == "AC-201")
+        assert m["status"] == "normal"
+
     def test_status_dispatch_technician_recommendation_yields_watch(self, client, db_session):
         """DISPATCH_TECHNICIAN recommendation → watch tier."""
         seed_machine_data(db_session, machine_id="HX-302", ai_recommendation="DISPATCH_TECHNICIAN")
