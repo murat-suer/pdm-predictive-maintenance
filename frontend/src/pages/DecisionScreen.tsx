@@ -1,13 +1,25 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import {
+  BarElement,
+  CategoryScale,
+  Chart as ChartJS,
+  Legend,
+  LinearScale,
+  Tooltip,
+} from 'chart.js'
+import { Bar } from 'react-chartjs-2'
 import Card from '../components/Card'
 import Badge from '../components/Badge'
 import Button from '../components/Button'
 import Header from '../components/Header'
+import { axisDefaults, tooltipDefaults, PALETTE } from '../components/charts/palette'
 import { apiPost } from '../api/client'
 import { useApi } from '../api/hooks'
 import { useI18n, type TranslationKey } from '../i18n'
-import type { DecisionResolveResult, PendingDecision } from '../api/types'
+import type { DecisionResolveResult, DecisionScenario, PendingDecision } from '../api/types'
+
+ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend)
 
 // ---------------------------------------------------------------------------
 // RBAC — role hierarchy and scenario → minimum-role matrix.
@@ -49,9 +61,132 @@ function canExecute(userRole: HumanRole, scenario: string): boolean {
   return ROLE_RANK[userRole] >= ROLE_RANK[minRole]
 }
 
+// ISA-101 scenario bar colours — mirrors palette.ts, SHUTDOWN stays red
+const SCENARIO_COLOR: Record<string, string> = {
+  OBSERVE: PALETTE.OBSERVE,
+  DISPATCH_TECHNICIAN: PALETTE.DISPATCH_TECHNICIAN,
+  PLANNED: PALETTE.PLANNED,
+  REDUCE_LOAD: PALETTE.REDUCE_LOAD,
+  SHUTDOWN: PALETTE.SHUTDOWN,
+}
+
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
+
+function ScenarioCostChart({
+  scenarios,
+  legendDirect,
+  legendRiskAdj,
+  ariaLabel,
+}: {
+  scenarios: DecisionScenario[]
+  legendDirect: string
+  legendRiskAdj: string
+  ariaLabel: string
+}) {
+  if (scenarios.length === 0) return null
+
+  // Build labels — recommended scenario gets a ✓ marker (non-colour identifier)
+  const labels = scenarios.map((s) =>
+    s.is_recommended ? `✓ ${s.scenario.replace(/_/g, ' ')}` : s.scenario.replace(/_/g, ' '),
+  )
+
+  const directValues = scenarios.map((s) => s.cost)
+  const riskValues = scenarios.map((s) => s.expected_cost ?? s.cost)
+
+  // Per-bar colours from palette for direct cost; risk-adj bars at 50% opacity
+  const directColors = scenarios.map((s) => SCENARIO_COLOR[s.scenario] ?? PALETTE.NEUTRAL)
+  const riskColors = scenarios.map((s) => {
+    const base = SCENARIO_COLOR[s.scenario] ?? PALETTE.NEUTRAL
+    return base + '80' // 50% opacity via hex alpha
+  })
+
+  // Recommended scenario gets a yellow outline border on both bar groups
+  const borderColors = scenarios.map((s) => (s.is_recommended ? PALETTE.ALARM_P3 : 'transparent'))
+  const borderWidths = scenarios.map((s) => (s.is_recommended ? 2 : 0))
+
+  const data = {
+    labels,
+    datasets: [
+      {
+        label: legendDirect,
+        data: directValues,
+        backgroundColor: directColors,
+        borderColor: borderColors,
+        borderWidth: borderWidths,
+        borderRadius: 3,
+      },
+      {
+        label: legendRiskAdj,
+        data: riskValues,
+        backgroundColor: riskColors,
+        borderColor: borderColors,
+        borderWidth: borderWidths,
+        borderRadius: 3,
+      },
+    ],
+  }
+
+  function fmtEur(n: number): string {
+    return `€${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+  }
+
+  // Scale height with number of scenarios so bars are legible
+  const chartHeight = Math.max(160, scenarios.length * 44)
+
+  return (
+    <div style={{ height: chartHeight }} aria-label={ariaLabel}>
+      <Bar
+        data={data}
+        options={{
+          indexAxis: 'y' as const,
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          plugins: {
+            legend: {
+              display: true,
+              position: 'top' as const,
+              labels: {
+                color: PALETTE.TICK,
+                font: { family: "'IBM Plex Mono', monospace", size: 9 },
+                boxWidth: 10,
+                padding: 8,
+              },
+            },
+            tooltip: {
+              ...tooltipDefaults,
+              callbacks: {
+                label: (ctx) => {
+                  const val = ctx.parsed.x
+                  return ` ${ctx.dataset.label}: ${val != null ? fmtEur(val) : '—'}`
+                },
+              },
+            },
+          },
+          scales: {
+            x: {
+              ...axisDefaults,
+              ticks: {
+                ...axisDefaults.ticks,
+                maxTicksLimit: 5,
+                callback: (v) => (typeof v === 'number' ? fmtEur(v) : String(v)),
+              },
+            },
+            y: {
+              ...axisDefaults,
+              ticks: {
+                ...axisDefaults.ticks,
+                maxRotation: 0,
+              },
+            },
+          },
+        }}
+      />
+    </div>
+  )
+}
 
 function WatchdogRing({ remainingSeconds, totalSeconds }: { remainingSeconds: number; totalSeconds: number }) {
   const { t } = useI18n()
@@ -505,6 +640,22 @@ export default function DecisionScreen() {
         </div>
       </div>
 
+      {/* Scenario Cost Comparison Chart */}
+      {decision.scenarios.length > 0 && (
+        <Card
+          title={t('decision.costComparison')}
+          subtitle={t('decision.costComparisonSub')}
+          className="mt-3"
+        >
+          <ScenarioCostChart
+            scenarios={decision.scenarios}
+            legendDirect={t('decision.legendDirect')}
+            legendRiskAdj={t('decision.legendRiskAdj')}
+            ariaLabel={t('decision.costChartAriaLabel')}
+          />
+        </Card>
+      )}
+
       {/* Decision Options */}
       <Card title={t('decision.options')} subtitle={t('decision.optionsSub')} className="mt-3">
         <div className={scenarioGridClass}>
@@ -587,7 +738,7 @@ export default function DecisionScreen() {
 
       {/* Execute Button */}
       {selectedScenario && (
-        <div className="flex flex-col items-end gap-2 mt-4">
+        <div className="flex flex-col items-end gap-2 mt-3">
           {!canExecute(sessionRole, selectedScenario) && (
             <p className="text-[12px] text-alarm-p3">
               {t('rbac.insufficientRole', {
