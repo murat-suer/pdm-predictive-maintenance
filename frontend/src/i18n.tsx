@@ -423,7 +423,7 @@ const tr: Record<TranslationKey, string> = {
   'fleet.mhiTrend': 'MHI Trendi — Makine Başına (24 sa)',
   'fleet.mhiTrendSub': 'Son 24 saatte makine başına Sağlık Endeksi (0–100)',
   'fleet.healthSnapshot': 'Sağlık Anlık Görüntüsü',
-  'fleet.healthSnapshotSub': 'Makine başına güncel sağlık skoru — kırmızı <55, amber <70, teal ≥70',
+  'fleet.healthSnapshotSub': 'Makine başına güncel sağlık — bar uzunluğu skor, renk ise durum sınıfı',
   'fleet.openMachineLink': 'Aç',
   'fleet.now': 'Şimdi',
 
@@ -765,7 +765,7 @@ const de: Record<TranslationKey, string> = {
   'fleet.mhiTrend': 'MHI-Trend — je Maschine (24 Std.)',
   'fleet.mhiTrendSub': 'Maschinengesundheitsindex je Maschine über 24 Std. (0–100)',
   'fleet.healthSnapshot': 'Gesundheits-Snapshot',
-  'fleet.healthSnapshotSub': 'Aktueller Gesundheitswert je Maschine — rot <55, amber <70, teal ≥70',
+  'fleet.healthSnapshotSub': 'Aktuelle Gesundheit je Maschine — Balkenlänge ist der Wert, Farbe die Statusstufe',
   'fleet.openMachineLink': 'Öffnen',
   'fleet.now': 'Jetzt',
 

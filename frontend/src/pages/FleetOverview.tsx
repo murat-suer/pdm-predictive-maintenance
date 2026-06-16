@@ -84,8 +84,11 @@ function HealthBar({
 }) {
   const { t } = useI18n()
   const pct = score != null ? Math.min(Math.max(score * 100, 0), 100) : null
-  const barColor =
-    pct == null ? PALETTE.TICK : pct < 55 ? PALETTE.ALARM_P4 : pct < 70 ? PALETTE.ALARM_P3 : PALETTE.GOOD
+  // ISA-101: red is reserved for genuinely critical states. The bar length
+  // shows the health magnitude; its COLOUR follows the machine's status tier
+  // (the recommendation), so a low-MHI machine the engine still rates Normal
+  // stays green instead of alarming red.
+  const barColor = pct == null ? PALETTE.TICK : (STATUS_COLOR[status] ?? PALETTE.GOOD)
   const rulDisplay = rul == null ? '—' : rul < 1 ? '<1' : rul.toFixed(0)
 
   return (
@@ -408,7 +411,9 @@ export default function FleetOverview() {
                     className="flex-1 rounded-t-sm transition-all duration-300"
                     style={{
                       height: `${Math.max(value, 2)}%`,
-                      backgroundColor: value < 55 ? '#ff1744' : value < 70 ? '#ffd600' : '#60a5fa',
+                      // Aggregate trend is a metric, not an alarm — keep red
+                      // reserved: amber when the fleet mean dips, blue otherwise.
+                      backgroundColor: value < 70 ? '#ffd600' : '#60a5fa',
                       opacity: 0.7,
                     }}
                     title={`${new Date(point.bucket).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} — MHI ${value.toFixed(0)}`}
@@ -505,15 +510,10 @@ export default function FleetOverview() {
                     {m.health_score == null ? (
                       <span className="text-text-tertiary">—</span>
                     ) : (
-                      <span
-                        className={
-                          m.health_score < 0.55
-                            ? 'text-alarm-p4'
-                            : m.health_score < 0.7
-                              ? 'text-alarm-p3'
-                              : 'text-text-primary'
-                        }
-                      >
+                      // Health % is a metric, not a priority signal — leave it
+                      // neutral; the Status column carries the (red-reserved)
+                      // tier colour.
+                      <span className="text-text-primary">
                         {(m.health_score * 100).toFixed(0)}%
                       </span>
                     )}
