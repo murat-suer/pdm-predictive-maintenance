@@ -176,3 +176,20 @@ class ShiftReportItem(BaseModel):
     shift_end: datetime
     generated_at: datetime
     report_data: dict[str, Any]
+
+
+class TimelineEvent(BaseModel):
+    """One decision event in the machine's post-repair history."""
+    at: datetime
+    recommendation: str | None = None
+    tier: str  # normal | watch | action | critical
+    outcome: str | None = None
+    decided_by: str | None = None
+
+
+class MachineTimeline(BaseModel):
+    """Decision history since the machine's last real repair, newest first."""
+    machine_id: str
+    repaired_at: datetime | None = None
+    count: int
+    events: list[TimelineEvent]

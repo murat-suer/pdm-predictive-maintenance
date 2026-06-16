@@ -280,6 +280,21 @@ export interface MhiHistoryResponse {
   machines: MhiHistoryMachine[]
 }
 
+export interface TimelineEvent {
+  at: string
+  recommendation: string | null
+  tier: string
+  outcome: string | null
+  decided_by: string | null
+}
+
+export interface MachineTimeline {
+  machine_id: string
+  repaired_at: string | null
+  count: number
+  events: TimelineEvent[]
+}
+
 export interface MaintenanceTimelineEvent {
   machine_id: string
   scenario: string

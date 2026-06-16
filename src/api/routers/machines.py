@@ -7,13 +7,15 @@ from sqlalchemy.orm import Session
 
 from src.api.dependencies import get_db, get_redis
 from src.api.routers.common import (
+    _RECOMMENDATION_TO_STATUS,
+    _last_repair_time,
     derive_machine_status,
     health_history,
     latest_health_scores,
     machine_type_label,
     utc_now,
 )
-from src.api.schemas import MachineDetail, MachineSummary, SensorSnapshot
+from src.api.schemas import MachineDetail, MachineSummary, MachineTimeline, SensorSnapshot, TimelineEvent
 from src.data_generator.machines import MACHINE_CONFIGS
 from src.database.models import AnomalyLog, SensorReading
 
@@ -160,6 +162,62 @@ async def get_sensor_series(
             }
         )
     return {"machine_id": machine_id, "minutes": minutes, "series": series}
+
+
+_TIMELINE_CAP = 15
+
+
+@router.get("/{machine_id}/timeline", response_model=MachineTimeline)
+async def get_machine_timeline(machine_id: str, db: Session = Depends(get_db)):
+    """Decision history since the machine's last real repair, newest first (capped at 15).
+
+    'Since last repair' uses the same boundary as the latched-status logic:
+    the most recent MaintenanceLog row whose downtime_minutes > 0.
+    """
+    from src.database.models import DecisionLog
+
+    if machine_id not in MACHINE_CONFIGS:
+        raise HTTPException(status_code=404, detail=f"Unknown machine: {machine_id}")
+
+    repaired_at = _last_repair_time(db, machine_id)
+
+    q = (
+        db.query(
+            DecisionLog.created_at,
+            DecisionLog.ai_recommendation,
+            DecisionLog.chosen_scenario_id,
+            DecisionLog.outcome,
+            DecisionLog.decided_by,
+        )
+        .filter(DecisionLog.machine_id == machine_id)
+    )
+    if repaired_at is not None:
+        q = q.filter(DecisionLog.created_at > repaired_at)
+
+    rows = q.order_by(DecisionLog.created_at.desc()).limit(_TIMELINE_CAP).all()
+
+    from src.api.routers.common import as_utc
+
+    events: list[TimelineEvent] = []
+    for created_at, ai_rec, chosen, outcome, decided_by in rows:
+        rec = ai_rec or chosen
+        tier = _RECOMMENDATION_TO_STATUS.get(rec, "watch") if rec else "normal"
+        events.append(
+            TimelineEvent(
+                at=as_utc(created_at),
+                recommendation=rec,
+                tier=tier,
+                outcome=outcome,
+                decided_by=decided_by,
+            )
+        )
+
+    return MachineTimeline(
+        machine_id=machine_id,
+        repaired_at=repaired_at,
+        count=len(events),
+        events=events,
+    )
 
 
 class WhatIfResult(BaseModel):

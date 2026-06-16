@@ -349,6 +349,10 @@ const en = {
   'system.metric.pending': 'Pending decisions',
   'system.metric.savings': 'Savings (cycle)',
 
+  // Machine timeline history strip (Health Snapshot)
+  'fleet.timeline.noEvents': 'No events since repair',
+  'fleet.timeline.sinceRepair': 'since last repair',
+
   // RBAC — role names and PIN elevation flow
   'rbac.role.SUPERVISOR': 'Supervisor',
   'rbac.role.PRODUCTION_MANAGER': 'Production Manager',
@@ -693,6 +697,10 @@ const tr: Record<TranslationKey, string> = {
   'system.metric.pending': 'Bekleyen karar',
   'system.metric.savings': 'Tasarruf (döngü)',
 
+  // Machine timeline history strip (Health Snapshot)
+  'fleet.timeline.noEvents': 'Son onarımdan bu yana olay yok',
+  'fleet.timeline.sinceRepair': 'son onarımdan bu yana',
+
   // RBAC
   'rbac.role.SUPERVISOR': 'Vardiya Amiri',
   'rbac.role.PRODUCTION_MANAGER': 'Üretim Müdürü',
@@ -1034,6 +1042,10 @@ const de: Record<TranslationKey, string> = {
   'system.metric.alarms': 'Aktive Alarme',
   'system.metric.pending': 'Offene Entscheidungen',
   'system.metric.savings': 'Einsparung (Zyklus)',
+
+  // Machine timeline history strip (Health Snapshot)
+  'fleet.timeline.noEvents': 'Keine Ereignisse seit Reparatur',
+  'fleet.timeline.sinceRepair': 'seit letzter Reparatur',
 
   // RBAC
   'rbac.role.SUPERVISOR': 'Schichtleiter',

@@ -15,6 +15,7 @@ import type {
   FleetSummary,
   HealthTrendPoint,
   MachineSummary,
+  MachineTimeline,
   MhiHistoryResponse,
 } from '../api/types'
 
@@ -68,7 +69,19 @@ function fmtLabel(iso: string): string {
   })
 }
 
-// Compact per-machine health block — health bar + health%, RUL, status badge, button (ISA-101)
+/** Compact relative time: "<1m", "5m", "2h", "3d" */
+function relTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diffMs / 60000)
+  if (mins < 1) return '<1m'
+  if (mins < 60) return `${mins}m`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h`
+  return `${Math.floor(hrs / 24)}d`
+}
+
+// Compact per-machine health block — health bar + health%, RUL, status badge,
+// history strip (since last repair), and Open button (ISA-101)
 function HealthBar({
   id,
   score,
@@ -92,6 +105,11 @@ function HealthBar({
   // (STATUS_COLOR) — this value is an inline backgroundColor.
   const barColor = pct == null ? PALETTE.TICK : (STATUS_DONUT_COLORS[status] ?? PALETTE.GOOD)
   const rulDisplay = rul == null ? '—' : rul < 1 ? '<1' : rul.toFixed(0)
+
+  // Fetch this machine's decision history since last repair (6 parallel fetches, one per card).
+  const { data: timeline } = useApi<MachineTimeline>(`/machines/${id}/timeline`, 30000)
+  // Show at most 4 chips; newest first (already ordered by API).
+  const chips = timeline?.events.slice(0, 4) ?? []
 
   return (
     <div className="flex flex-col gap-1 min-w-0">
@@ -132,6 +150,35 @@ function HealthBar({
           <span>{t(`status.${status}` as TranslationKey)}</span>
         </span>
       </div>
+
+      {/* History strip — decision events since last repair */}
+      {timeline != null && (
+        <div className="flex flex-col gap-0.5 min-w-0">
+          {chips.length === 0 ? (
+            <span className="text-[9px] text-text-tertiary italic leading-tight">
+              {t('fleet.timeline.noEvents')}
+            </span>
+          ) : (
+            <div className="flex flex-wrap gap-0.5" title={t('fleet.timeline.sinceRepair')}>
+              {chips.map((ev, i) => (
+                <span
+                  key={i}
+                  className="inline-flex items-center gap-0.5 text-[9px] font-mono leading-tight px-1 py-0.5 rounded-sm border"
+                  style={{
+                    color: STATUS_DONUT_COLORS[ev.tier] ?? PALETTE.TICK,
+                    borderColor: STATUS_DONUT_COLORS[ev.tier] ?? PALETTE.TICK,
+                    opacity: 0.85,
+                  }}
+                  title={ev.recommendation ?? ev.tier}
+                >
+                  <span aria-hidden="true">{STATUS_SHAPE[ev.tier] ?? '○'}</span>
+                  <span>{relTime(ev.at)}</span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Navigate button */}
       <Button

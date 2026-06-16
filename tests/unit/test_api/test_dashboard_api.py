@@ -610,3 +610,173 @@ class TestShiftReportsEndpoint:
         assert len(reports) == 1
         assert reports[0]["shift_type"] == "A"
         assert reports[0]["report_data"]["summary"] == "Quiet shift"
+
+
+class TestMachineTimelineEndpoint:
+    """GET /api/v1/machines/{machine_id}/timeline"""
+
+    def test_timeline_unknown_machine_returns_404(self, client):
+        response = client.get("/api/v1/machines/NOPE-999/timeline")
+        assert response.status_code == 404
+
+    def test_timeline_empty_when_no_decisions(self, client):
+        """No decisions → count 0, empty events list."""
+        response = client.get("/api/v1/machines/AC-201/timeline")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["machine_id"] == "AC-201"
+        assert data["count"] == 0
+        assert data["events"] == []
+        assert data["repaired_at"] is None
+
+    def test_timeline_events_newest_first(self, client, db_session):
+        """Multiple decisions are returned newest first."""
+        now = datetime.now(UTC)
+        older = now - timedelta(hours=3)
+        newer = now - timedelta(hours=1)
+
+        # Two decisions without an intervening repair.
+        db_session.add(
+            DecisionLog(
+                machine_id="AC-201",
+                action="APPROVE",
+                ai_recommendation="OBSERVE",
+                decided_by="BOT-OPR",
+                created_at=older,
+            )
+        )
+        db_session.add(
+            DecisionLog(
+                machine_id="AC-201",
+                action="APPROVE",
+                ai_recommendation="PLANNED",
+                decided_by="HUMAN-OP-1",
+                created_at=newer,
+            )
+        )
+        db_session.commit()
+
+        response = client.get("/api/v1/machines/AC-201/timeline")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["count"] == 2
+        # Newest first: PLANNED before OBSERVE.
+        assert data["events"][0]["recommendation"] == "PLANNED"
+        assert data["events"][0]["tier"] == "action"
+        assert data["events"][1]["recommendation"] == "OBSERVE"
+        assert data["events"][1]["tier"] == "watch"
+
+    def test_timeline_excludes_events_before_last_repair(self, client, db_session):
+        """Only events after the last real repair (downtime_minutes > 0) are returned."""
+        now = datetime.now(UTC)
+        repair_time = now - timedelta(hours=2)
+
+        # Decision BEFORE the repair — must be excluded.
+        db_session.add(
+            DecisionLog(
+                machine_id="AC-201",
+                action="APPROVE",
+                ai_recommendation="SHUTDOWN",
+                decided_by="BOT-MGR",
+                created_at=now - timedelta(hours=4),
+            )
+        )
+        # Real repair.
+        db_session.add(
+            MaintenanceLog(
+                machine_id="AC-201",
+                performed_at=repair_time,
+                downtime_minutes=60,
+                cost_eur=5000.0,
+            )
+        )
+        # Decision AFTER the repair — must be included.
+        db_session.add(
+            DecisionLog(
+                machine_id="AC-201",
+                action="PENDING",
+                ai_recommendation="OBSERVE",
+                decided_by=None,
+                created_at=now - timedelta(hours=1),
+            )
+        )
+        db_session.commit()
+
+        response = client.get("/api/v1/machines/AC-201/timeline")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["count"] == 1
+        assert data["events"][0]["recommendation"] == "OBSERVE"
+        assert data["repaired_at"] is not None
+
+    def test_timeline_tier_mapping(self, client, db_session):
+        """Tier is derived correctly for all recommendation codes."""
+        now = datetime.now(UTC)
+        cases = [
+            ("OBSERVE",            "watch"),
+            ("DISPATCH_TECHNICIAN","watch"),
+            ("PLANNED",            "action"),
+            ("REDUCE_LOAD",        "critical"),
+            ("SHUTDOWN",           "critical"),
+        ]
+        for idx, (rec, _) in enumerate(cases):
+            db_session.add(
+                DecisionLog(
+                    machine_id="AC-201",
+                    action="APPROVE",
+                    ai_recommendation=rec,
+                    created_at=now - timedelta(hours=len(cases) - idx),
+                )
+            )
+        db_session.commit()
+
+        response = client.get("/api/v1/machines/AC-201/timeline")
+        assert response.status_code == 200
+        events = response.json()["events"]
+        # newest-first: reverse of insertion order
+        actual = {e["recommendation"]: e["tier"] for e in events}
+        for rec, expected_tier in cases:
+            assert actual[rec] == expected_tier, f"{rec} → expected {expected_tier}, got {actual[rec]}"
+
+    def test_timeline_inspection_without_downtime_does_not_reset_boundary(
+        self, client, db_session
+    ):
+        """A MaintenanceLog with downtime_minutes=0 (inspection, no stop) must NOT
+        reset the 'since last repair' boundary."""
+        now = datetime.now(UTC)
+
+        # Old decision.
+        db_session.add(
+            DecisionLog(
+                machine_id="CM-203",
+                action="APPROVE",
+                ai_recommendation="OBSERVE",
+                created_at=now - timedelta(hours=5),
+            )
+        )
+        # Inspection visit — downtime_minutes=0, not a repair.
+        db_session.add(
+            MaintenanceLog(
+                machine_id="CM-203",
+                performed_at=now - timedelta(hours=3),
+                downtime_minutes=0,
+                cost_eur=0.0,
+            )
+        )
+        # Newer decision.
+        db_session.add(
+            DecisionLog(
+                machine_id="CM-203",
+                action="APPROVE",
+                ai_recommendation="PLANNED",
+                created_at=now - timedelta(hours=1),
+            )
+        )
+        db_session.commit()
+
+        response = client.get("/api/v1/machines/CM-203/timeline")
+        assert response.status_code == 200
+        data = response.json()
+        # Both decisions are included because the inspection does not reset the boundary.
+        assert data["count"] == 2
+        assert data["repaired_at"] is None
