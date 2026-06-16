@@ -312,19 +312,110 @@ class TestDecisionsEndpoints:
             db_session.query(DecisionLog).filter(DecisionLog.alarm_id == alarm.id).first()
         )
         first = client.post(
-            f"/api/v1/decisions/{decision.id}/resolve", json={"scenario_id": "OBSERVE"}
+            f"/api/v1/decisions/{decision.id}/resolve",
+            json={"scenario_id": "OBSERVE", "operator_role": "SUPERVISOR", "operator_id": "HUMAN-SUP-1"},
         )
         assert first.status_code == 200
         second = client.post(
-            f"/api/v1/decisions/{decision.id}/resolve", json={"scenario_id": "OBSERVE"}
+            f"/api/v1/decisions/{decision.id}/resolve",
+            json={"scenario_id": "OBSERVE", "operator_role": "SUPERVISOR", "operator_id": "HUMAN-SUP-1"},
         )
         assert second.status_code == 409
 
     def test_resolve_unknown_decision_404(self, client):
         response = client.post(
-            "/api/v1/decisions/does-not-exist/resolve", json={"scenario_id": "OBSERVE"}
+            "/api/v1/decisions/does-not-exist/resolve",
+            json={"scenario_id": "OBSERVE", "operator_role": "SUPERVISOR", "operator_id": "HUMAN-SUP-1"},
         )
         assert response.status_code == 404
+
+
+class TestDecisionRBAC:
+    """Role-based access control for human operator resolutions.
+
+    Bot identities (operator_id starting with "BOT-") must remain exempt so the
+    closed-loop auto-approval loop never regresses.
+    """
+
+    def test_human_supervisor_shutdown_forbidden(self, client, db_session):
+        """SUPERVISOR cannot execute SHUTDOWN — must get 403."""
+        alarm = seed_machine_data(db_session)
+        decision = (
+            db_session.query(DecisionLog).filter(DecisionLog.alarm_id == alarm.id).first()
+        )
+        response = client.post(
+            f"/api/v1/decisions/{decision.id}/resolve",
+            json={
+                "scenario_id": "SHUTDOWN",
+                "operator_role": "SUPERVISOR",
+                "operator_id": "HUMAN-SUP-1",
+            },
+        )
+        assert response.status_code == 403
+
+    def test_human_plant_manager_shutdown_allowed(self, client, db_session):
+        """PLANT_MANAGER can execute SHUTDOWN — must succeed (200)."""
+        alarm = seed_machine_data(db_session)
+        decision = (
+            db_session.query(DecisionLog).filter(DecisionLog.alarm_id == alarm.id).first()
+        )
+        response = client.post(
+            f"/api/v1/decisions/{decision.id}/resolve",
+            json={
+                "scenario_id": "SHUTDOWN",
+                "operator_role": "PLANT_MANAGER",
+                "operator_id": "HUMAN-PLANT-1",
+            },
+        )
+        assert response.status_code == 200
+
+    def test_human_production_manager_reduce_load_allowed(self, client, db_session):
+        """PRODUCTION_MANAGER can execute REDUCE_LOAD — must succeed (200)."""
+        alarm = seed_machine_data(db_session)
+        decision = (
+            db_session.query(DecisionLog).filter(DecisionLog.alarm_id == alarm.id).first()
+        )
+        response = client.post(
+            f"/api/v1/decisions/{decision.id}/resolve",
+            json={
+                "scenario_id": "REDUCE_LOAD",
+                "operator_role": "PRODUCTION_MANAGER",
+                "operator_id": "HUMAN-PMGR-1",
+            },
+        )
+        assert response.status_code == 200
+
+    def test_human_production_manager_shutdown_forbidden(self, client, db_session):
+        """PRODUCTION_MANAGER cannot execute SHUTDOWN — must get 403."""
+        alarm = seed_machine_data(db_session)
+        decision = (
+            db_session.query(DecisionLog).filter(DecisionLog.alarm_id == alarm.id).first()
+        )
+        response = client.post(
+            f"/api/v1/decisions/{decision.id}/resolve",
+            json={
+                "scenario_id": "SHUTDOWN",
+                "operator_role": "PRODUCTION_MANAGER",
+                "operator_id": "HUMAN-PMGR-1",
+            },
+        )
+        assert response.status_code == 403
+
+    def test_bot_shutdown_allowed_no_regression(self, client, db_session):
+        """BOT-* identities bypass RBAC and may resolve SHUTDOWN (auto-approval loop)."""
+        alarm = seed_machine_data(db_session)
+        decision = (
+            db_session.query(DecisionLog).filter(DecisionLog.alarm_id == alarm.id).first()
+        )
+        response = client.post(
+            f"/api/v1/decisions/{decision.id}/resolve",
+            json={
+                "scenario_id": "SHUTDOWN",
+                "operator_role": "SUPERVISOR",
+                "operator_id": "BOT-SUP-ALPHA",
+            },
+        )
+        assert response.status_code == 200
 
 
 class TestAuditEndpoint:

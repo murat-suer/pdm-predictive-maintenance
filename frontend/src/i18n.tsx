@@ -331,6 +331,21 @@ const en = {
   'system.metric.alarms': 'Active alarms',
   'system.metric.pending': 'Pending decisions',
   'system.metric.savings': 'Savings (cycle)',
+
+  // RBAC — role names and PIN elevation flow
+  'rbac.role.SUPERVISOR': 'Supervisor',
+  'rbac.role.PRODUCTION_MANAGER': 'Production Manager',
+  'rbac.role.PLANT_MANAGER': 'Plant Manager',
+  'rbac.sessionLabel': 'Session:',
+  'rbac.returnToBase': 'Return to supervisor identity',
+  'rbac.insufficientRole': 'Requires {role} authority — click to authorize with PIN',
+  'rbac.elevateAndExecute': 'Authorize & Execute',
+  'rbac.modal.title': 'Authorization Required',
+  'rbac.modal.body': 'Enter the PIN for {role} to proceed.',
+  'rbac.modal.pinPlaceholder': 'Enter PIN',
+  'rbac.modal.wrongPin': 'Incorrect PIN. Access denied.',
+  'rbac.modal.cancel': 'Cancel',
+  'rbac.modal.confirm': 'Confirm',
 } as const
 
 export type TranslationKey = keyof typeof en
@@ -645,6 +660,21 @@ const tr: Record<TranslationKey, string> = {
   'system.metric.alarms': 'Aktif alarm',
   'system.metric.pending': 'Bekleyen karar',
   'system.metric.savings': 'Tasarruf (döngü)',
+
+  // RBAC
+  'rbac.role.SUPERVISOR': 'Vardiya Amiri',
+  'rbac.role.PRODUCTION_MANAGER': 'Üretim Müdürü',
+  'rbac.role.PLANT_MANAGER': 'Fabrika Müdürü',
+  'rbac.sessionLabel': 'Oturum:',
+  'rbac.returnToBase': 'Süpervizör kimliğine dön',
+  'rbac.insufficientRole': '{role} yetkisi gerekli — PIN ile yetkilendirmek için tıklayın',
+  'rbac.elevateAndExecute': 'Yetkilendir & Uygula',
+  'rbac.modal.title': 'Yetkilendirme Gerekli',
+  'rbac.modal.body': 'Devam etmek için {role} PIN\'ini girin.',
+  'rbac.modal.pinPlaceholder': 'PIN girin',
+  'rbac.modal.wrongPin': 'Yanlış PIN. Erişim reddedildi.',
+  'rbac.modal.cancel': 'İptal',
+  'rbac.modal.confirm': 'Onayla',
 }
 
 const de: Record<TranslationKey, string> = {
@@ -957,6 +987,21 @@ const de: Record<TranslationKey, string> = {
   'system.metric.alarms': 'Aktive Alarme',
   'system.metric.pending': 'Offene Entscheidungen',
   'system.metric.savings': 'Einsparung (Zyklus)',
+
+  // RBAC
+  'rbac.role.SUPERVISOR': 'Schichtleiter',
+  'rbac.role.PRODUCTION_MANAGER': 'Produktionsleiter',
+  'rbac.role.PLANT_MANAGER': 'Werkleiter',
+  'rbac.sessionLabel': 'Sitzung:',
+  'rbac.returnToBase': 'Zur Schichtleiter-Identität zurück',
+  'rbac.insufficientRole': '{role}-Berechtigung erforderlich — PIN zur Autorisierung eingeben',
+  'rbac.elevateAndExecute': 'Autorisieren & Ausführen',
+  'rbac.modal.title': 'Autorisierung erforderlich',
+  'rbac.modal.body': 'Geben Sie die PIN für {role} ein, um fortzufahren.',
+  'rbac.modal.pinPlaceholder': 'PIN eingeben',
+  'rbac.modal.wrongPin': 'Falsche PIN. Zugriff verweigert.',
+  'rbac.modal.cancel': 'Abbrechen',
+  'rbac.modal.confirm': 'Bestätigen',
 }
 
 const dictionaries: Record<Lang, Record<TranslationKey, string>> = { en, de, tr }

@@ -16,6 +16,54 @@ from src.decision.decision_resolution import VALID_SCENARIOS, resolve_decision_p
 
 router = APIRouter(prefix="/decisions", tags=["decisions"])
 
+# ---------------------------------------------------------------------------
+# Human RBAC — scenario → minimum required role (ascending authority order).
+# Bot resolutions (operator_id starts with "BOT-") bypass this check entirely
+# so the auto-approval loop never regresses.
+# ---------------------------------------------------------------------------
+_ROLE_RANK: dict[str, int] = {
+    "SUPERVISOR": 1,
+    "PRODUCTION_MANAGER": 2,
+    "PLANT_MANAGER": 3,
+}
+
+_SCENARIO_MIN_ROLE: dict[str, str] = {
+    "OBSERVE": "SUPERVISOR",
+    "DISPATCH_TECHNICIAN": "SUPERVISOR",
+    "PLANNED": "SUPERVISOR",
+    "REDUCE_LOAD": "PRODUCTION_MANAGER",
+    "SHUTDOWN": "PLANT_MANAGER",
+}
+
+
+def _human_role_rank(role: str) -> int:
+    """Return numeric rank for a human operator role; unknown roles get rank 0 (blocked)."""
+    return _ROLE_RANK.get(role.upper(), 0)
+
+
+def _check_human_rbac(operator_id: str | None, operator_role: str, scenario_id: str) -> None:
+    """Raise HTTP 403 if a human operator lacks the authority for the requested scenario.
+
+    Bot identities (operator_id starting with "BOT-") are exempt — their path
+    is unchanged so the closed-loop auto-approval continues to work.
+    """
+    if operator_id and operator_id.upper().startswith("BOT-"):
+        return  # bots bypass human RBAC
+
+    min_role = _SCENARIO_MIN_ROLE.get(scenario_id.upper(), "PLANT_MANAGER")
+    required_rank = _ROLE_RANK.get(min_role, 3)
+    supplied_rank = _human_role_rank(operator_role)
+
+    if supplied_rank < required_rank:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Insufficient authority: scenario '{scenario_id}' requires"
+                f" '{min_role}' (rank {required_rank}),"
+                f" but operator role '{operator_role}' has rank {supplied_rank}."
+            ),
+        )
+
 
 def _to_pending(db: Session, decision: DecisionLog) -> PendingDecision:
     anomaly: AnomalyLog | None = None
@@ -90,6 +138,9 @@ async def resolve_decision(
             status_code=422,
             detail=f"Invalid scenario '{request.scenario_id}'. Valid: {sorted(VALID_SCENARIOS)}",
         )
+
+    # Enforce role-based access for human operators (bots are exempt).
+    _check_human_rbac(request.operator_id, request.operator_role, scenario_id)
 
     decision = db.query(DecisionLog).filter(DecisionLog.id == decision_id).first()
     if decision is None:

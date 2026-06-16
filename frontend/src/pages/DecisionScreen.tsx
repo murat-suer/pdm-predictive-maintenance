@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Card from '../components/Card'
 import Badge from '../components/Badge'
@@ -9,13 +9,49 @@ import { useApi } from '../api/hooks'
 import { useI18n, type TranslationKey } from '../i18n'
 import type { DecisionResolveResult, PendingDecision } from '../api/types'
 
-const SCENARIO_ROLE: Record<string, string> = {
-  OBSERVE: 'Any',
-  DISPATCH_TECHNICIAN: 'Operator',
-  REDUCE_LOAD: 'Operator',
-  PLANNED: 'Supervisor',
-  SHUTDOWN: 'Manager',
+// ---------------------------------------------------------------------------
+// RBAC — role hierarchy and scenario → minimum-role matrix.
+// Must mirror the backend enforcement in src/api/routers/decisions.py.
+// ---------------------------------------------------------------------------
+export type HumanRole = 'SUPERVISOR' | 'PRODUCTION_MANAGER' | 'PLANT_MANAGER'
+
+const ROLE_RANK: Record<HumanRole, number> = {
+  SUPERVISOR: 1,
+  PRODUCTION_MANAGER: 2,
+  PLANT_MANAGER: 3,
 }
+
+const SCENARIO_MIN_ROLE: Record<string, HumanRole> = {
+  OBSERVE: 'SUPERVISOR',
+  DISPATCH_TECHNICIAN: 'SUPERVISOR',
+  PLANNED: 'SUPERVISOR',
+  REDUCE_LOAD: 'PRODUCTION_MANAGER',
+  SHUTDOWN: 'PLANT_MANAGER',
+}
+
+// Demo credentials — these are presentation-only PINs, NOT production secrets.
+const DEMO_ROLE_PINS: Record<HumanRole, string | null> = {
+  SUPERVISOR: null, // base role; no PIN needed
+  PRODUCTION_MANAGER: '4827',
+  PLANT_MANAGER: '7391',
+}
+
+const ROLE_IDENTITY: Record<HumanRole, string> = {
+  SUPERVISOR: 'HUMAN-SUP-1',
+  PRODUCTION_MANAGER: 'HUMAN-PMGR-1',
+  PLANT_MANAGER: 'HUMAN-PLANT-1',
+}
+
+const BASE_ROLE: HumanRole = 'SUPERVISOR'
+
+function canExecute(userRole: HumanRole, scenario: string): boolean {
+  const minRole = SCENARIO_MIN_ROLE[scenario] ?? 'PLANT_MANAGER'
+  return ROLE_RANK[userRole] >= ROLE_RANK[minRole]
+}
+
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
 
 function WatchdogRing({ remainingSeconds, totalSeconds }: { remainingSeconds: number; totalSeconds: number }) {
   const { t } = useI18n()
@@ -86,6 +122,96 @@ function useCountdown(dueAt: string | null): number {
   return remaining
 }
 
+// ---------------------------------------------------------------------------
+// PIN elevation modal
+// ---------------------------------------------------------------------------
+interface PinModalProps {
+  targetRole: HumanRole
+  onSuccess: (role: HumanRole) => void
+  onCancel: () => void
+}
+
+function PinModal({ targetRole, onSuccess, onCancel }: PinModalProps) {
+  const { t } = useI18n()
+  const [pin, setPin] = useState('')
+  const [error, setError] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel()
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [onCancel])
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (pin === DEMO_ROLE_PINS[targetRole]) {
+      setError(false)
+      onSuccess(targetRole)
+    } else {
+      setError(true)
+      setPin('')
+      inputRef.current?.focus()
+    }
+  }
+
+  const roleKey = `rbac.role.${targetRole}` as TranslationKey
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="pin-modal-title"
+    >
+      <div className="bg-bg-elevated border border-border-default rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6">
+        <h2 id="pin-modal-title" className="text-base font-semibold text-text-primary mb-1">
+          {t('rbac.modal.title')}
+        </h2>
+        <p className="text-[12px] text-text-secondary mb-4">
+          {t('rbac.modal.body', { role: t(roleKey) })}
+        </p>
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+          <input
+            ref={inputRef}
+            type="password"
+            inputMode="numeric"
+            autoComplete="off"
+            value={pin}
+            onChange={(e) => { setPin(e.target.value); setError(false) }}
+            placeholder={t('rbac.modal.pinPlaceholder')}
+            className={`w-full rounded-lg border px-4 py-2 text-sm font-mono bg-bg-secondary text-text-primary placeholder:text-text-tertiary outline-none focus:ring-2 focus:ring-alarm-p0 ${
+              error ? 'border-alarm-p4' : 'border-border-default'
+            }`}
+            aria-label={t('rbac.modal.pinPlaceholder')}
+          />
+          {error && (
+            <p className="text-[11px] text-alarm-p4">{t('rbac.modal.wrongPin')}</p>
+          )}
+          <div className="flex gap-2 justify-end mt-1">
+            <Button variant="ghost" size="sm" onClick={onCancel} type="button">
+              {t('rbac.modal.cancel')}
+            </Button>
+            <Button variant="primary" size="sm" type="submit" disabled={pin.length === 0}>
+              {t('rbac.modal.confirm')}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Main screen
+// ---------------------------------------------------------------------------
 export default function DecisionScreen() {
   const { t } = useI18n()
   const pendingApi = useApi<PendingDecision[]>('/decisions/pending', 10000)
@@ -93,6 +219,14 @@ export default function DecisionScreen() {
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<DecisionResolveResult | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
+
+  // Session identity — starts as base SUPERVISOR
+  const [sessionRole, setSessionRole] = useState<HumanRole>(BASE_ROLE)
+
+  // PIN modal state: the role we are trying to elevate to (null = closed)
+  const [elevatingTo, setElevatingTo] = useState<HumanRole | null>(null)
+  // After elevation, which scenario to immediately execute
+  const [pendingScenario, setPendingScenario] = useState<string | null>(null)
 
   const decision = pendingApi.data?.[0] ?? null
   const remainingSeconds = useCountdown(decision?.due_at ?? null)
@@ -121,25 +255,60 @@ export default function DecisionScreen() {
         )
       : 180
 
-  const handleExecute = async () => {
-    if (!decision || !selectedScenario) return
+  const executeScenario = async (scenarioId: string, role: HumanRole) => {
+    if (!decision) return
     setSubmitting(true)
     setSubmitError(null)
     try {
       const response = await apiPost<DecisionResolveResult>(`/decisions/${decision.id}/resolve`, {
-        scenario_id: selectedScenario,
-        operator_role: 'SUPERVISOR',
-        operator_id: 'HUMAN-OP-1',
+        scenario_id: scenarioId,
+        operator_role: role,
+        operator_id: ROLE_IDENTITY[role],
       })
       setResult(response)
       setSelectedScenario(null)
       pendingApi.refetch()
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Resolution failed')
+      setSubmitError(err instanceof Error ? err.message : String(err))
     } finally {
       setSubmitting(false)
     }
   }
+
+  const handleExecute = async () => {
+    if (!decision || !selectedScenario) return
+
+    if (!canExecute(sessionRole, selectedScenario)) {
+      // Determine the minimum role required and open the PIN modal
+      const minRole = SCENARIO_MIN_ROLE[selectedScenario] ?? 'PLANT_MANAGER'
+      setPendingScenario(selectedScenario)
+      setElevatingTo(minRole)
+      return
+    }
+
+    await executeScenario(selectedScenario, sessionRole)
+  }
+
+  const handlePinSuccess = async (newRole: HumanRole) => {
+    setElevatingTo(null)
+    setSessionRole(newRole)
+    if (pendingScenario) {
+      const scenario = pendingScenario
+      setPendingScenario(null)
+      await executeScenario(scenario, newRole)
+    }
+  }
+
+  const handlePinCancel = () => {
+    setElevatingTo(null)
+    setPendingScenario(null)
+  }
+
+  const handleReturnToBase = () => {
+    setSessionRole(BASE_ROLE)
+  }
+
+  const roleDisplayKey = `rbac.role.${sessionRole}` as TranslationKey
 
   if (pendingApi.error && !decision) {
     return (
@@ -180,6 +349,15 @@ export default function DecisionScreen() {
 
   return (
     <div className="p-4">
+      {/* PIN elevation modal — rendered above everything */}
+      {elevatingTo && (
+        <PinModal
+          targetRole={elevatingTo}
+          onSuccess={handlePinSuccess}
+          onCancel={handlePinCancel}
+        />
+      )}
+
       <Header title={t('decision.title')} />
 
       {/* Human-oversight transparency note (EU AI Act) */}
@@ -188,6 +366,28 @@ export default function DecisionScreen() {
           <span className="text-text-secondary font-medium">{t('decision.oversightTitle')}</span>{' '}
           {t('decision.oversightBody')}
         </p>
+      </Card>
+
+      {/* Current session identity badge */}
+      <Card className="mb-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-text-secondary">{t('rbac.sessionLabel')}</span>
+            <span className="font-mono text-xs text-text-primary">{ROLE_IDENTITY[sessionRole]}</span>
+            <Badge
+              variant={sessionRole === 'PLANT_MANAGER' ? 'p4' : sessionRole === 'PRODUCTION_MANAGER' ? 'p3' : 'p0'}
+              label={t(roleDisplayKey)}
+            />
+          </div>
+          {sessionRole !== BASE_ROLE && (
+            <button
+              onClick={handleReturnToBase}
+              className="text-[11px] text-text-tertiary hover:text-text-secondary underline"
+            >
+              {t('rbac.returnToBase')}
+            </button>
+          )}
+        </div>
       </Card>
 
       {/* Active Alarm Banner */}
@@ -268,6 +468,8 @@ export default function DecisionScreen() {
             const descriptionKey = `scenario.${opt.scenario}` as TranslationKey
             const isRecommended = opt.scenario === recommended?.scenario
             const isSelected = selectedScenario === opt.scenario
+            const locked = !canExecute(sessionRole, opt.scenario)
+            const minRoleKey = `rbac.role.${SCENARIO_MIN_ROLE[opt.scenario] ?? 'PLANT_MANAGER'}` as TranslationKey
 
             return (
               <button
@@ -278,7 +480,9 @@ export default function DecisionScreen() {
                     ? 'border-alarm-p0 bg-alarm-p0/10'
                     : isRecommended
                       ? 'border-alarm-p3/50 bg-alarm-p3/5'
-                      : 'border-border-default bg-bg-elevated hover:bg-bg-hover'
+                      : locked
+                        ? 'border-border-subtle bg-bg-secondary opacity-70'
+                        : 'border-border-default bg-bg-elevated hover:bg-bg-hover'
                 } ${opt.scenario === 'SHUTDOWN' ? 'border-alarm-p4/30 hover:border-alarm-p4/60' : ''}`}
               >
                 <div className="flex items-center justify-between">
@@ -319,9 +523,13 @@ export default function DecisionScreen() {
                   </div>
                 </div>
 
+                {/* Required role badge */}
                 <div className="flex items-center gap-1 mt-1">
-                  <span className="text-[10px] text-text-tertiary">🔒</span>
-                  <span className="text-[10px] text-text-tertiary">{SCENARIO_ROLE[opt.scenario] ?? 'Any'}</span>
+                  {locked ? (
+                    <span className="text-[10px] text-alarm-p3">🔒 {t(minRoleKey)}</span>
+                  ) : (
+                    <span className="text-[10px] text-text-tertiary">✓ {t(minRoleKey)}</span>
+                  )}
                 </div>
               </button>
             )
@@ -334,7 +542,14 @@ export default function DecisionScreen() {
 
       {/* Execute Button */}
       {selectedScenario && (
-        <div className="flex justify-end mt-4">
+        <div className="flex flex-col items-end gap-2 mt-4">
+          {!canExecute(sessionRole, selectedScenario) && (
+            <p className="text-[12px] text-alarm-p3">
+              {t('rbac.insufficientRole', {
+                role: t(`rbac.role.${SCENARIO_MIN_ROLE[selectedScenario] ?? 'PLANT_MANAGER'}` as TranslationKey),
+              })}
+            </p>
+          )}
           <Button
             variant={selectedScenario === 'SHUTDOWN' ? 'alarm' : 'primary'}
             size="lg"
@@ -342,7 +557,11 @@ export default function DecisionScreen() {
             onClick={handleExecute}
             disabled={submitting}
           >
-            {submitting ? t('decision.executing') : `${t('decision.execute')} ${selectedScenario.replace(/_/g, ' ')}`}
+            {submitting
+              ? t('decision.executing')
+              : canExecute(sessionRole, selectedScenario)
+                ? `${t('decision.execute')} ${selectedScenario.replace(/_/g, ' ')}`
+                : `🔒 ${t('rbac.elevateAndExecute')} ${selectedScenario.replace(/_/g, ' ')}`}
           </Button>
         </div>
       )}
