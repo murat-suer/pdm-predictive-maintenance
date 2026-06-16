@@ -635,23 +635,26 @@ class TestMachineTimelineEndpoint:
         older = now - timedelta(hours=3)
         newer = now - timedelta(hours=1)
 
-        # Two decisions without an intervening repair.
+        # Two APPROVED decisions without an intervening repair. The timeline
+        # shows the CHOSEN scenario at the time it was decided.
         db_session.add(
             DecisionLog(
                 machine_id="AC-201",
                 action="APPROVE",
-                ai_recommendation="OBSERVE",
+                chosen_scenario_id="OBSERVE",
                 decided_by="BOT-OPR",
                 created_at=older,
+                decided_at=older,
             )
         )
         db_session.add(
             DecisionLog(
                 machine_id="AC-201",
                 action="APPROVE",
-                ai_recommendation="PLANNED",
+                chosen_scenario_id="PLANNED",
                 decided_by="HUMAN-OP-1",
                 created_at=newer,
+                decided_at=newer,
             )
         )
         db_session.commit()
@@ -666,6 +669,21 @@ class TestMachineTimelineEndpoint:
         assert data["events"][1]["recommendation"] == "OBSERVE"
         assert data["events"][1]["tier"] == "watch"
 
+    def test_timeline_excludes_pending_decisions(self, client, db_session):
+        """A pending (not yet approved) decision is not a committed action and
+        must not appear on the timeline — only what was actually approved."""
+        now = datetime.now(UTC)
+        db_session.add(
+            DecisionLog(
+                machine_id="AC-201", action="PENDING",
+                ai_recommendation="OBSERVE", created_at=now,
+            )
+        )
+        db_session.commit()
+        data = client.get("/api/v1/machines/AC-201/timeline").json()
+        assert data["count"] == 0
+        assert data["events"] == []
+
     def test_timeline_excludes_events_before_last_repair(self, client, db_session):
         """Only events after the last real repair (downtime_minutes > 0) are returned."""
         now = datetime.now(UTC)
@@ -676,9 +694,10 @@ class TestMachineTimelineEndpoint:
             DecisionLog(
                 machine_id="AC-201",
                 action="APPROVE",
-                ai_recommendation="SHUTDOWN",
+                chosen_scenario_id="SHUTDOWN",
                 decided_by="BOT-MGR",
                 created_at=now - timedelta(hours=4),
+                decided_at=now - timedelta(hours=4),
             )
         )
         # Real repair.
@@ -690,14 +709,15 @@ class TestMachineTimelineEndpoint:
                 cost_eur=5000.0,
             )
         )
-        # Decision AFTER the repair — must be included.
+        # APPROVED decision AFTER the repair — must be included.
         db_session.add(
             DecisionLog(
                 machine_id="AC-201",
-                action="PENDING",
-                ai_recommendation="OBSERVE",
-                decided_by=None,
+                action="APPROVE",
+                chosen_scenario_id="OBSERVE",
+                decided_by="BOT-OPR",
                 created_at=now - timedelta(hours=1),
+                decided_at=now - timedelta(hours=1),
             )
         )
         db_session.commit()

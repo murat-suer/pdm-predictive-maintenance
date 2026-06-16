@@ -181,30 +181,38 @@ async def get_machine_timeline(machine_id: str, db: Session = Depends(get_db)):
 
     repaired_at = _last_repair_time(db, machine_id)
 
+    # Only APPROVED decisions belong on the history — a pending recommendation
+    # is not a committed action (the operator may not pick it), so it must not
+    # show as an event until it is actually decided. Use the CHOSEN scenario
+    # (what was approved), and the decided_at time, not the alarm-creation time.
     q = (
         db.query(
+            DecisionLog.decided_at,
             DecisionLog.created_at,
-            DecisionLog.ai_recommendation,
             DecisionLog.chosen_scenario_id,
+            DecisionLog.ai_recommendation,
             DecisionLog.outcome,
             DecisionLog.decided_by,
         )
-        .filter(DecisionLog.machine_id == machine_id)
+        .filter(
+            DecisionLog.machine_id == machine_id,
+            DecisionLog.action == "APPROVE",
+        )
     )
     if repaired_at is not None:
-        q = q.filter(DecisionLog.created_at > repaired_at)
+        q = q.filter(DecisionLog.decided_at > repaired_at)
 
-    rows = q.order_by(DecisionLog.created_at.desc()).limit(_TIMELINE_CAP).all()
+    rows = q.order_by(DecisionLog.decided_at.desc()).limit(_TIMELINE_CAP).all()
 
     from src.api.routers.common import as_utc
 
     events: list[TimelineEvent] = []
-    for created_at, ai_rec, chosen, outcome, decided_by in rows:
-        rec = ai_rec or chosen
+    for decided_at, created_at, chosen, ai_rec, outcome, decided_by in rows:
+        rec = chosen or ai_rec
         tier = _RECOMMENDATION_TO_STATUS.get(rec, "watch") if rec else "normal"
         events.append(
             TimelineEvent(
-                at=as_utc(created_at),
+                at=as_utc(decided_at or created_at),
                 recommendation=rec,
                 tier=tier,
                 outcome=outcome,

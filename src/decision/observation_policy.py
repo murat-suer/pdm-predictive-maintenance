@@ -1,14 +1,14 @@
 """Escalation policy for repeated OBSERVE decisions (EEMUA 191).
 
 Watching an unexplained anomaly once is a legitimate call. Watching the same
-machine for the third or fourth time is an alarm-management anti-pattern:
+machine for the second or third time is an alarm-management anti-pattern:
 the operator sees that something is wrong but never learns what. This module
 escalates instead:
 
 - from the second consecutive OBSERVE, a DISPATCH_TECHNICIAN scenario is
   offered (on-line inspection, small call-out cost, no line stop) and — when
   the fault is still unclassified — recommended over watching again;
-- after three consecutive OBSERVEs the OBSERVE option is no longer presented
+- after two consecutive OBSERVEs the OBSERVE option is no longer presented
   at all.
 
 A real intervention (REDUCE_LOAD / PLANNED / SHUTDOWN) resets the streak;
@@ -22,7 +22,7 @@ DISPATCH_SCENARIO = "DISPATCH_TECHNICIAN"
 # Offer the inspection from the 2nd consecutive decision after an OBSERVE.
 OBSERVE_DISPATCH_AFTER = 1
 # After this many consecutive OBSERVEs the option disappears entirely.
-OBSERVE_MAX_STREAK = 3
+OBSERVE_MAX_STREAK = 2
 # Technician call-out for an on-line inspection (no production stop).
 DISPATCH_COST_EUR = 150.0
 
