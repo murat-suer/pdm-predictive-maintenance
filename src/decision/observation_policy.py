@@ -72,6 +72,55 @@ def fault_is_identified(db, anomaly_id) -> bool:
     return bool(row) and row[0] not in UNIDENTIFIED_FAULTS
 
 
+def dispatched_since_repair(db, machine_id: str) -> bool:
+    """Whether a technician has already been dispatched for this machine
+    since its last repair.
+
+    A dispatch is an on-site inspection that diagnoses the fault, so from
+    then on the fault is effectively identified — the next escalation should
+    schedule the repair (PLANNED) rather than dispatch a technician again to
+    re-diagnose what is now known. The latch resets on an actual repair
+    (a maintenance with downtime), the same boundary the dashboard uses.
+    """
+    from datetime import UTC
+
+    from src.database.models import DecisionLog, MaintenanceLog
+
+    def _utc(dt):
+        return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
+
+    repair_row = (
+        db.query(MaintenanceLog.performed_at)
+        .filter(
+            MaintenanceLog.machine_id == machine_id,
+            MaintenanceLog.performed_at.isnot(None),
+            MaintenanceLog.downtime_minutes.isnot(None),
+            MaintenanceLog.downtime_minutes > 0,
+        )
+        .order_by(MaintenanceLog.performed_at.desc())
+        .first()
+    )
+    repaired_at = (
+        _utc(repair_row[0]) if repair_row is not None and repair_row[0] is not None else None
+    )
+
+    rows = (
+        db.query(DecisionLog.decided_at, DecisionLog.created_at)
+        .filter(
+            DecisionLog.machine_id == machine_id,
+            DecisionLog.chosen_scenario_id == DISPATCH_SCENARIO,
+        )
+        .all()
+    )
+    for decided, created in rows:
+        ts = decided or created
+        if ts is None:
+            continue
+        if repaired_at is None or _utc(ts) > repaired_at:
+            return True
+    return False
+
+
 def apply_observe_escalation(
     scenarios: list[dict],
     recommendation: str | None,

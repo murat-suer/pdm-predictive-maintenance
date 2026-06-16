@@ -6,11 +6,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from src.database.models import AnomalyLog, DecisionLog
+from src.database.models import AnomalyLog, DecisionLog, MaintenanceLog
 from src.decision.observation_policy import (
     DISPATCH_COST_EUR,
     DISPATCH_SCENARIO,
     apply_observe_escalation,
+    dispatched_since_repair,
     fault_is_identified,
     observe_streak,
 )
@@ -118,6 +119,7 @@ def db():
     )
     DecisionLog.__table__.create(engine, checkfirst=True)
     AnomalyLog.__table__.create(engine, checkfirst=True)
+    MaintenanceLog.__table__.create(engine, checkfirst=True)
     session = sessionmaker(bind=engine)()
     yield session
     session.close()
@@ -158,6 +160,28 @@ class TestObserveStreak:
     def test_other_machine_does_not_count(self, db):
         add_decision(db, "HX-202", "OBSERVE", 30)
         assert observe_streak(db, "AC-201") == 0
+
+
+class TestDispatchedSinceRepair:
+    def test_no_dispatch_is_false(self, db):
+        add_decision(db, "AC-201", "OBSERVE", 30)
+        assert dispatched_since_repair(db, "AC-201") is False
+
+    def test_dispatch_makes_it_identified(self, db):
+        add_decision(db, "AC-201", DISPATCH_SCENARIO, 20)
+        assert dispatched_since_repair(db, "AC-201") is True
+
+    def test_repair_after_dispatch_resets(self, db):
+        add_decision(db, "AC-201", DISPATCH_SCENARIO, 60)
+        db.add(
+            MaintenanceLog(
+                machine_id="AC-201",
+                performed_at=datetime.now(UTC) - timedelta(minutes=30),
+                downtime_minutes=45,
+            )
+        )
+        db.commit()
+        assert dispatched_since_repair(db, "AC-201") is False
 
 
 class TestFaultIdentified:

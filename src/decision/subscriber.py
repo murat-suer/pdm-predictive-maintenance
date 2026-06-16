@@ -336,17 +336,25 @@ class DecisionSubscriber:
                 # a technician dispatch and eventually loses the OBSERVE option.
                 from src.decision.observation_policy import (
                     apply_observe_escalation,
+                    dispatched_since_repair,
                     fault_is_identified,
                     observe_streak,
                 )
 
+                # A fault the classifier named, OR one a dispatched technician
+                # has already inspected since the last repair, counts as
+                # identified — the next escalation then schedules the repair
+                # (PLANNED) instead of dispatching again.
+                identified = fault_is_identified(self._db, anomaly_id) or dispatched_since_repair(
+                    self._db, machine_id
+                )
                 streak = observe_streak(self._db, machine_id)
                 if streak > 0:
                     scenarios_data, ai_recommendation = apply_observe_escalation(
                         scenarios_data,
                         ai_recommendation,
                         streak,
-                        fault_is_identified(self._db, anomaly_id),
+                        identified,
                     )
 
                 # The AlarmState after_insert listener already creates a
