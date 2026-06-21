@@ -7,7 +7,7 @@ name = "pdm-intelligence"
 version = "3.0.0"
 description = "Industrial AI Predictive Maintenance System"
 readme = "README.md"
-license = {text = "Apache-2.0"}
+license = {text = "AGPL-3.0-or-later"}
 requires-python = ">=3.11"
 authors = [{name = "Murat SUER", email = "murat@muratsuer.eu"}]
 keywords = ["predictive-maintenance", "industrial-ai", "time-series"]

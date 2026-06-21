@@ -1,7 +1,7 @@
 # PDM Intelligence — Industrial AI Predictive Maintenance
 
 [![CI](https://github.com/murat-suer/pdm-predictive-maintenance/actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_3.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 [![React 19](https://img.shields.io/badge/react-19-61dafb.svg)](https://react.dev/)
 
@@ -215,4 +215,4 @@ from industrial practice; the ML pipeline comes from the new one.
 
 [muratsuer.eu](https://muratsuer.eu) · murat@muratsuer.eu
 
-Licensed under [Apache-2.0](LICENSE).
+Licensed under [AGPL-3.0](LICENSE).
